@@ -1,0 +1,19 @@
+.chat-window {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-window-header {
+  background: #f8f9fa;
+}
+
+.messages-area {
+  flex: 1;
+  overflow-y: auto;
+  background: #fff;
+}
+
+.chat-input-area {
+  background: #f8f9fa;
+}

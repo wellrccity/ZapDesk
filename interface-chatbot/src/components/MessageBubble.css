@@ -1,0 +1,71 @@
+/* src/components/MessageBubble.css */
+.message-container {
+  display: flex;
+  margin-bottom: 10px;
+}
+
+.message-container.from-me {
+  justify-content: flex-end;
+}
+
+.message-container.from-them {
+  justify-content: flex-start;
+}
+
+.message-bubble {
+  max-width: 70%;
+  padding: 8px 12px;
+  border-radius: 12px;
+  word-wrap: break-word;
+}
+
+.from-me .message-bubble {
+  background-color: var(--message-out-bg);
+  border-bottom-right-radius: 0;
+}
+
+.from-them .message-bubble {
+  background-color: var(--message-in-bg);
+  border-bottom-left-radius: 0;
+}
+
+.message-image {
+  max-width: 100%;
+  cursor: pointer;
+}
+
+.message-audio {
+  width: 100%;
+  min-width: 250px;
+}
+
+.message-video {
+  max-width: 100%;
+}
+
+.message-text {
+  margin: 0;
+  padding-top: 5px; /* Espaço entre mídia e legenda */
+  white-space: pre-wrap; /* Preserva quebras de linha */
+}
+
+.document-link {
+  display: flex;
+  align-items: center;
+  padding: 10px;
+  background-color: rgba(0,0,0,0.05);
+  border-radius: 8px;
+  text-decoration: none;
+  color: inherit;
+}
+.document-link:hover {
+    background-color: rgba(0,0,0,0.1);
+}
+/* Adicione estas regras ao final de src/components/MessageBubble.css */
+.message-image {
+  max-width: 350px; /* Define uma largura máxima para a imagem */
+  max-height: 350px; /* Define uma altura máxima */
+  height: auto;
+  width: auto;
+  border-radius: 8px;
+}

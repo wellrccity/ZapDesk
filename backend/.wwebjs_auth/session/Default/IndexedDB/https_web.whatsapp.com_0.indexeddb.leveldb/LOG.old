@@ -1,0 +1,14 @@
+2025/09/25-14:59:01.603 17d4 Reusing MANIFEST D:\Bibliotecas\Documents\whatsbot\backend\.wwebjs_auth\session\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
+2025/09/25-14:59:01.603 17d4 Recovering log #315
+2025/09/25-14:59:01.639 17d4 Reusing old log D:\Bibliotecas\Documents\whatsbot\backend\.wwebjs_auth\session\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/000315.log 
+2025/09/25-14:59:01.639 17d4 Delete type=2 #313
+2025/09/25-14:59:06.026 78 Level-0 table #320: started
+2025/09/25-14:59:06.208 78 Level-0 table #320: 177975 bytes OK
+2025/09/25-14:59:06.233 78 Delete type=0 #315
+2025/09/25-14:59:06.233 78 Manual compaction at level-0 from '\x00~\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x7f\x00\x00\x00' @ 0 : 0; will stop at '\x00~\x00\x00\x05' @ 152829 : 1
+2025/09/25-14:59:06.234 78 Compacting 1@0 + 1@1 files
+2025/09/25-14:59:06.668 78 Generated table #321@0: 45724 keys, 879835 bytes
+2025/09/25-14:59:06.668 78 Compacted 1@0 + 1@1 files => 879835 bytes
+2025/09/25-14:59:06.699 78 compacted to: files[ 0 1 1 0 0 0 0 ]
+2025/09/25-14:59:06.700 78 Delete type=2 #320
+2025/09/25-14:59:06.700 78 Manual compaction at level-0 from '\x00~\x00\x00\x05' @ 152829 : 1 .. '\x00\x7f\x00\x00\x00' @ 0 : 0; will stop at (end)
