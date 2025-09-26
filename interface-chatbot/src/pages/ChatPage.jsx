@@ -1,34 +1,38 @@
-// src/pages/ChatPage.jsx
 import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Alert } from 'react-bootstrap';
 import io from 'socket.io-client';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { toast } from 'react-toastify';
 
 import ChatList from '../components/ChatList';
 import ChatWindow from '../components/ChatWindow';
 import TransferChatModal from '../components/TransferChatModal';
 
+// A instância do socket é criada fora do componente para evitar múltiplas conexões
 const socket = io('http://localhost:3001');
 
 function ChatPage() {
+  // --- Estados do Componente ---
   const { user } = useAuth();
-  const [chats, setChats] = useState([]);
-  const [users, setUsers] = useState([]);
-  const [activeChat, setActiveChat] = useState(null);
-  const [messages, setMessages] = useState([]);
-  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
-  const [showTransferModal, setShowTransferModal] = useState(false);
-  const [error, setError] = useState('');
-  const [filterStatus, setFilterStatus] = useState('open');
+  const [chats, setChats] = useState([]); // Lista de chats da barra lateral
+  const [users, setUsers] = useState([]); // Lista de usuários para transferência
+  const [activeChat, setActiveChat] = useState(null); // O chat que está aberto no momento
+  const [messages, setMessages] = useState([]); // A lista de mensagens do chat ativo
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false); // Controla o spinner de carregamento de mensagens
+  const [showTransferModal, setShowTransferModal] = useState(false); // Controla a visibilidade do modal de transferência
+  const [error, setError] = useState(''); // Mensagens de erro
+  const [filterStatus, setFilterStatus] = useState('open'); // Estado do filtro ('open' ou 'all')
 
+  // --- Efeitos (Lifecycle) ---
+
+  // Efeito para buscar dados iniciais e configurar listeners de socket
   useEffect(() => {
+    // 1. Busca os dados iniciais (chats e usuários)
     const fetchData = async () => {
       try {
-        // MUDANÇA: A URL agora usa o estado do filtro
         const chatsRes = await api.get(`/chats?status=${filterStatus}`);
         setChats(chatsRes.data);
-        
         if (user.role === 'admin') {
           const usersRes = await api.get('/users');
           setUsers(usersRes.data);
@@ -38,8 +42,39 @@ function ChatPage() {
       }
     };
     fetchData();
-  }, [user.role, filterStatus]);
+    
+    // 2. Registra o usuário no socket para receber notificações direcionadas
+    socket.emit('user_connected', user.id);
 
+    // 3. Listener para ATUALIZAÇÕES DE CHAT (eventos de outros usuários)
+    const handleChatUpdated = (updatedChat) => {
+      setChats(prevChats =>
+        prevChats.map(c => (c.id === updatedChat.id ? updatedChat : c))
+      );
+      if (activeChat?.id === updatedChat.id) {
+        setActiveChat(updatedChat);
+      }
+    };
+
+    // 4. Listener para NOTIFICAÇÕES DE TRANSFERÊNCIA
+    const handleTransferNotification = (data) => {
+      const { chat } = data;
+      toast.info(`O chat com ${chat.name || chat.whatsapp_number} foi transferido para você!`, {
+        onClick: () => handleSelectChat(chat) // Permite clicar na notificação para abrir o chat
+      });
+    };
+
+    socket.on('chat_updated', handleChatUpdated);
+    socket.on('transfer_notification', handleTransferNotification);
+
+    // 5. Limpeza: remove os listeners ao sair da página
+    return () => {
+      socket.off('chat_updated', handleChatUpdated);
+      socket.off('transfer_notification', handleTransferNotification);
+    };
+  }, [user.id, user.role, filterStatus]); // Roda novamente se o filtro mudar
+
+  // Efeito para ouvir NOVAS MENSAGENS do chat que está ativo
   useEffect(() => {
     const handleNewMessage = (newMessage) => {
       if (newMessage.chat_id === activeChat?.id) {
@@ -50,7 +85,9 @@ function ChatPage() {
     return () => {
       socket.off('nova_mensagem', handleNewMessage);
     };
-  }, [activeChat]);
+  }, [activeChat]); // Reativa o listener se o chat ativo mudar
+
+  // --- Funções de Ação (Handlers) ---
 
   const handleSelectChat = async (chat) => {
     setActiveChat(chat);
@@ -67,21 +104,10 @@ function ChatPage() {
     }
   };
 
-    const handleAssumeChat = async (chatId) => {
+  const handleAssumeChat = async (chatId) => {
     try {
-      // Chama a API para atribuir o chat ao usuário logado (user.id)
-      const response = await api.put(`/chats/${chatId}/assign`, { userId: user.id });
-      
-      // Atualiza a lista de chats na tela com a nova informação
-      setChats(prevChats => 
-        prevChats.map(chat => (chat.id === chatId ? response.data : chat))
-      );
-      
-      // Se o chat assumido for o que está ativo, atualiza ele também
-      if(activeChat?.id === chatId) {
-        setActiveChat(response.data);
-      }
-
+      await api.put(`/chats/${chatId}/assign`, { userId: user.id });
+      // A atualização da UI acontecerá via evento de socket 'chat_updated'
     } catch (err) {
       setError('Não foi possível assumir o chat. Tente novamente.');
     }
@@ -90,12 +116,9 @@ function ChatPage() {
   const handleTransferChat = async (targetUserId) => {
     if (!activeChat) return;
     try {
-      const response = await api.put(`/chats/${activeChat.id}/assign`, { userId: targetUserId });
-      setChats(prevChats => 
-        prevChats.map(chat => (chat.id === activeChat.id ? response.data : chat))
-      );
-      setActiveChat(response.data);
+      await api.put(`/chats/${activeChat.id}/assign`, { userId: targetUserId });
       setShowTransferModal(false);
+      // A atualização da UI acontecerá via evento de socket
     } catch (err) {
       setError('Não foi possível transferir o chat.');
     }
@@ -104,64 +127,45 @@ function ChatPage() {
   const handleCloseChat = async (chatId) => {
     if (window.confirm('Tem certeza que deseja finalizar este atendimento?')) {
       try {
-        // A API agora retorna o chat atualizado
-        const response = await api.put(`/chats/${chatId}/close`);
-        
-        // MUDANÇA: Em vez de 'filter', usamos 'map' para ATUALIZAR o chat na lista
-        setChats(prevChats => 
-          prevChats.map(chat => (chat.id === chatId ? response.data : chat))
-        );
-
-        // Limpa o chat ativo se for o que foi fechado
-        if (activeChat?.id === chatId) {
-          setActiveChat(null);
-        }
+        await api.put(`/chats/${chatId}/close`);
+        setActiveChat(null); // Fecha a janela do chat localmente
+        // A atualização da lista acontecerá via evento de socket
       } catch (err) {
         setError('Não foi possível finalizar o atendimento.');
       }
     }
   };
 
-  const handleSendMessage = (text) => {
-    if(!activeChat) return;
-
-    // Envia a mensagem via socket para o backend
-    socket.emit('enviar_mensagem', { to: activeChat.whatsapp_number, text });
-    
-    // Adiciona a mensagem do atendente localmente na tela para uma resposta visual imediata
-    const tempMessage = {
-        id: Date.now(),
-        body: text,
-        timestamp: Math.floor(Date.now() / 1000),
-        from_me: true,
-        media_type: 'chat',
-        chat_id: activeChat.id
-    }
-    setMessages(prev => [...prev, tempMessage]);
-  };
   const handleReopenChat = async (chatId) => {
     try {
       const response = await api.put(`/chats/${chatId}/reopen`);
-      
-      // Atualiza o chat na lista com o novo status 'open'
-      setChats(prevChats => 
-        prevChats.map(chat => (chat.id === chatId ? response.data : chat))
-      );
-      
-      // Opcional: seleciona automaticamente o chat reaberto
-      setActiveChat(response.data);
-
+      setActiveChat(response.data); // Reabre e seleciona o chat
+      // A atualização da lista acontecerá via evento de socket
     } catch (err) {
       setError('Não foi possível reabrir o atendimento.');
     }
   };
 
+  const handleSendMessage = (text) => {
+    let userName = user.name || 'Atendente';
+    let messageText = `*${userName}:*\n${text}`;
+    if(!activeChat) return;
+    socket.emit('enviar_mensagem', { to: activeChat.whatsapp_number, text: messageText });
+    const tempMessage = {
+      id: Date.now(), body: messageText, timestamp: Math.floor(Date.now() / 1000),
+      from_me: true, media_type: 'chat', chat_id: activeChat.id
+    };
+    setMessages(prev => [...prev, tempMessage]);
+  };
+
+  // --- Renderização do Componente ---
+
   return (
-    // vh-100 garante 100% da viewport; se você tiver um header fixe, ajuste para calc(100vh - 56px)
     <Container fluid className="p-0 vh-100">
-      <Row className="chat-page-container h-100" noGutters>
+      <Row className="chat-page-container h-100 g-0">
         {error && <Alert variant="danger">{error}</Alert>}
-        <Col md={4} xl={3} className="h-100">
+        
+        <Col md={4} xl={3} className="border-end h-100">
           <ChatList
             chats={chats}
             activeChatId={activeChat?.id}
@@ -173,6 +177,7 @@ function ChatPage() {
             onReopenChat={handleReopenChat}
           />
         </Col>
+
         <Col md={8} xl={9} className="h-100">
           {activeChat ? (
             <ChatWindow
@@ -193,6 +198,7 @@ function ChatPage() {
           )}
         </Col>
       </Row>
+
       <TransferChatModal
         show={showTransferModal}
         onHide={() => setShowTransferModal(false)}
