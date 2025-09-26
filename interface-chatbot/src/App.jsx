@@ -7,8 +7,11 @@ import { useAuth } from './context/AuthContext';
 import LoginPage from './pages/LoginPage';
 import ChatPage from './pages/ChatPage';
 import AdminPage from './pages/AdminPage';
+import IntegrationManagementPage from './pages/IntegrationManagementPage';
 import UserManagementPage from './pages/UserManagementPage';
 import QRCodePage from './pages/QRCodePage';
+import FlowManagementPage from './pages/FlowManagementPage';
+import FlowEditorPage from './pages/FlowEditorPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import NavbarComponent from './components/NavbarComponent';
 import { ToastContainer } from 'react-toastify';
@@ -33,12 +36,15 @@ function AppContent() {
             <Route path="/admin/commands" element={<AdminPage />} />
             <Route path="/admin/users" element={<UserManagementPage />} />
             <Route path="/admin/connection" element={<QRCodePage />} />
+            <Route path="/admin/integrations" element={<IntegrationManagementPage />} />
+            <Route path="/admin/flows" element={<FlowManagementPage />} />
+            <Route path="/admin/flows/:flowId/edit" element={<FlowEditorPage />} />
           </Route>
           
           <Route path="*" element={<Navigate to={isLoggedIn ? "/chat" : "/login"} />} />
         </Routes>
       </main>
-            <ToastContainer position="bottom-right" autoClose={5000} hideProgressBar={false} />
+      <ToastContainer position="bottom-right" autoClose={5000} hideProgressBar={false} />
     </div>
   );
 }

@@ -23,6 +23,7 @@ function NavbarComponent() {
             <Nav.Link as={Link} to="/chat">Chats</Nav.Link>
             {user?.role === 'admin' && (
               <>
+                <Nav.Link as={Link} to="/admin/flows">Fluxos</Nav.Link>
                 <Nav.Link as={Link} to="/admin/commands">Comandos</Nav.Link>
                 <Nav.Link as={Link} to="/admin/users">Usuários</Nav.Link>
                 <Nav.Link as={Link} to="/admin/connection">Conexão WhatsApp</Nav.Link>
