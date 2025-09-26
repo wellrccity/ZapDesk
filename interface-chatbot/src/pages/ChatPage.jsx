@@ -147,12 +147,10 @@ function ChatPage() {
   };
 
   const handleSendMessage = (text) => {
-    let userName = user.name || 'Atendente';
-    let messageText = `*${userName}:*\n${text}`;
     if(!activeChat) return;
-    socket.emit('enviar_mensagem', { to: activeChat.whatsapp_number, text: messageText });
+    socket.emit('enviar_mensagem', { to: activeChat.whatsapp_number, text });
     const tempMessage = {
-      id: Date.now(), body: messageText, timestamp: Math.floor(Date.now() / 1000),
+      id: Date.now(), body: text, timestamp: Math.floor(Date.now() / 1000),
       from_me: true, media_type: 'chat', chat_id: activeChat.id
     };
     setMessages(prev => [...prev, tempMessage]);

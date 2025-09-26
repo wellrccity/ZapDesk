@@ -11,6 +11,9 @@ import UserManagementPage from './pages/UserManagementPage';
 import QRCodePage from './pages/QRCodePage';
 import ProtectedRoute from './components/ProtectedRoute';
 import NavbarComponent from './components/NavbarComponent';
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css'; 
+
 
 // Componente interno para gerenciar o conteúdo e o layout
 function AppContent() {
@@ -35,6 +38,7 @@ function AppContent() {
           <Route path="*" element={<Navigate to={isLoggedIn ? "/chat" : "/login"} />} />
         </Routes>
       </main>
+            <ToastContainer position="bottom-right" autoClose={5000} hideProgressBar={false} />
     </div>
   );
 }

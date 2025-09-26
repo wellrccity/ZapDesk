@@ -1,9 +1,9 @@
-// ARQUIVO: /controllers/chat.controller.js (Versão Completa e Corrigida)
+// ARQUIVO: /controllers/chat.controller.js
 
 const db = require("../models");
 const Chat = db.chats;
-const Message = db.messages; // <-- Garanta que esta linha existe
-const User = db.users;      // <-- E esta também
+const Message = db.messages;
+const User = db.users;
 
 // Busca todos os chats com base no filtro de status
 exports.findAll = async (req, res) => {
@@ -36,31 +36,44 @@ exports.assign = async (req, res) => {
 
   try {
     const chat = await Chat.findByPk(chatId);
-    if (!chat) {
-      return res.status(404).send({ message: "Chat não encontrado." });
-    }
+    if (!chat) return res.status(404).send({ message: "Chat não encontrado." });
 
     const attendant = await User.findByPk(userId);
-    if (!attendant) {
-      return res.status(404).send({ message: "Atendente não encontrado." });
-    }
+    if (!attendant) return res.status(404).send({ message: "Atendente não encontrado." });
 
+    const originalAssigneeId = chat.assigned_to;
     chat.assigned_to = userId;
     await chat.save();
 
     const welcomeMessage = `Olá! Meu nome é ${attendant.name} e darei continuidade ao seu atendimento. 👋`;
     await req.whatsappClient.sendMessage(chat.whatsapp_number, welcomeMessage);
-
+    
     await Message.create({
       chat_id: chat.id,
       body: welcomeMessage,
       timestamp: Math.floor(Date.now() / 1000),
-      from_me: true, // Importante: 'true' para alinhar à direita
+      from_me: true,
       media_type: 'chat',
-      });
+    });
+
     const updatedChat = await Chat.findByPk(chatId, {
       include: [{ model: db.users, as: 'assignee', attributes: ['id', 'name'] }]
     });
+
+    // Eventos em tempo real
+    req.io.emit('chat_updated', updatedChat.toJSON());
+
+    const isTransfer = originalAssigneeId !== null && originalAssigneeId !== userId;
+    if (isTransfer) {
+        const targetSocketId = req.userSockets[userId];
+        if (targetSocketId) {
+            const transferNotification = {
+                chat: updatedChat.toJSON(),
+                from: req.userName || 'um colega'
+            };
+            req.io.to(targetSocketId).emit('transfer_notification', transferNotification);
+        }
+    }
 
     res.send(updatedChat);
   } catch (error) {
@@ -88,14 +101,12 @@ exports.closeChat = async (req, res) => {
   const { chatId } = req.params;
   try {
     const chat = await Chat.findByPk(chatId, { include: "assignee" });
-    if (!chat) {
-      return res.status(404).send({ message: `Chat com id=${chatId} não encontrado.` });
-    }
+    if (!chat) return res.status(404).send({ message: `Chat com id=${chatId} não encontrado.` });
 
     const attendantName = chat.assignee ? chat.assignee.name : "nosso time";
     const goodbyeMessage = `Seu atendimento foi finalizado por ${attendantName}. Agradecemos o seu contato! 😊`;
     await req.whatsappClient.sendMessage(chat.whatsapp_number, goodbyeMessage);
-
+    
     await Message.create({
       chat_id: chat.id,
       body: goodbyeMessage,
@@ -112,6 +123,7 @@ exports.closeChat = async (req, res) => {
         include: [{ model: db.users, as: 'assignee', attributes: ['id', 'name'] }]
     });
 
+    req.io.emit('chat_updated', updatedChat.toJSON());
     res.send(updatedChat);
   } catch (error) {
     console.error("Erro ao fechar chat:", error);
@@ -135,6 +147,7 @@ exports.reopenChat = async (req, res) => {
         include: [{ model: db.users, as: 'assignee', attributes: ['id', 'name'] }]
     });
 
+    req.io.emit('chat_updated', updatedChat.toJSON());
     res.send(updatedChat);
   } catch (error) {
     res.status(500).send({ message: "Erro ao reabrir o chat: " + error.message });
