@@ -47,3 +47,19 @@
   font-weight: bold;
   margin: 0;
 }
+.chat-item-closed {
+  opacity: 0.6;
+  background-color: #f1f1f1;
+}
+
+.chat-item-closed:hover {
+  opacity: 0.8;
+}
+.chat-avatar {
+  width: 48px;
+  min-width: 48px; /* Garante que a largura não seja menor que 48px */
+  height: 48px;
+  border-radius: 50%; /* Deixa a imagem redonda */
+  object-fit: cover; /* Faz a imagem preencher o círculo sem distorcer */
+  flex-shrink: 0; /* Impede que a imagem encolha se não houver espaço */
+}

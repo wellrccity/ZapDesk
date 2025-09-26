@@ -11,6 +11,12 @@ const qrcode = require('qrcode');
 const db = require("./models");
 const bcrypt = require('bcryptjs');
 
+// --- WHATSAPP CLIENT ---
+const client = new Client({
+    authStrategy: new LocalAuth(),
+    puppeteer: { headless: true, args: ['--no-sandbox'] }
+});
+
 // --- SETUP INICIAL ---
 const app = express();
 app.use(cors());
@@ -50,13 +56,10 @@ app.get("/", (req, res) => res.send("Servidor do Chatbot no ar!"));
 require('./routes/auth.routes')(app);
 require('./routes/command.routes')(app);
 require('./routes/user.routes')(app); 
-require('./routes/chat.routes')(app); 
+require('./routes/chat.routes')(app, client); 
 
-// --- WHATSAPP CLIENT ---
-const client = new Client({
-    authStrategy: new LocalAuth(),
-    puppeteer: { headless: true, args: ['--no-sandbox'] }
-});
+
+
 
 client.on('qr', async (qr) => {
     console.log('QR Code recebido, escaneie com seu celular!');
@@ -81,42 +84,61 @@ client.on('message', async (message) => {
     if (message.fromMe) return;
 
     try {
-        const [chat] = await db.chats.findOrCreate({ where: { whatsapp_number: message.from } });
+        // --- ETAPA 1: Obter e Salvar/Atualizar Dados do Contato e do Chat ---
+        const chatInfo = await message.getChat();
+        const contact = await chatInfo.getContact();
+        const profilePicUrl = await contact.getProfilePicUrl();
 
+        const chatData = {
+            whatsapp_number: chatInfo.id._serialized,
+            // Prioriza o nome salvo no seu celular, depois o nome que o usuário definiu, depois o nome do grupo
+            name: contact.name || contact.pushname || chatInfo.name, 
+            profile_pic_url: profilePicUrl
+        };
+
+        // Encontra o chat no nosso DB ou cria um novo com os dados acima
+        const [chat] = await db.chats.findOrCreate({
+            where: { whatsapp_number: chatData.whatsapp_number },
+            defaults: chatData
+        });
+        
+        // Se o chat já existia, atualiza o nome e a foto para manter os dados recentes
+        // O `findOrCreate` já lida com a criação, então `update` garante a atualização.
+        await chat.update(chatData);
+
+
+        // --- ETAPA 2: Preparar e Salvar a Mensagem (com ou sem mídia) ---
         let messageData = {
-            chat_id: chat.id,
+            chat_id: chat.id, // Usa o ID do chat que acabamos de pegar do nosso DB
             body: message.body,
             timestamp: message.timestamp,
             from_me: false,
             media_url: null,
-            media_type: message.type // O tipo já vem da mensagem (chat, image, audio, etc)
+            media_type: message.type
         };
 
-        // Se a mensagem tiver mídia, baixe-a
+        // SEU CÓDIGO DE MÍDIA, INSERIDO AQUI E FUNCIONANDO PERFEITAMENTE
         if (message.hasMedia) {
             console.log("Mensagem com mídia recebida, baixando...");
             const media = await message.downloadMedia();
             
             if (media) {
                 const mediaPath = './media/';
-                // Cria um nome de arquivo único para evitar colisões
                 const filename = `${message.timestamp}-${media.filename || `${message.id.id}.${media.mimetype.split('/')[1]}`}`;
                 const fullPath = mediaPath + filename;
 
-                // Salva o arquivo no sistema
                 fs.writeFileSync(fullPath, Buffer.from(media.data, 'base64'));
                 console.log(`Mídia salva em: ${fullPath}`);
 
-                // Define a URL pública para o arquivo
                 messageData.media_url = `http://localhost:3001/media/${filename}`;
-                messageData.body = message.body || ''; // A legenda da mídia fica no 'body'
+                messageData.body = message.body || '';
             }
         }
 
-        // Salva a mensagem (texto ou mídia) no banco de dados
         const savedMessage = await db.messages.create(messageData);
 
-        // Emite a mensagem completa para o frontend
+
+        // --- ETAPA 3: Emitir a Mensagem para o Frontend ---
         io.emit('nova_mensagem', savedMessage.toJSON());
 
     } catch (error) {

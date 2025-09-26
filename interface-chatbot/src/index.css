@@ -1,327 +1,55 @@
-/* DENTRO DE: src/index.css (adicione no topo do arquivo) */
+/* ARQUIVO: src/index.css */
 
-/* Garante que a aplicação ocupe 100% da altura da janela */
+/* 1. Base da Aplicação (O mais importante) */
 html, body, #root {
-  height: 100%;
-  overflow: hidden; /* Evita a barra de rolagem no corpo da página */
-}
-
-/* Define o layout principal da aplicação */
-.app-layout {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-}
-
-.main-content {
-  flex-grow: 1; /* Faz o conteúdo principal ocupar o espaço restante */
-  overflow: hidden; /* Garante que o conteúdo principal não crie uma barra de rolagem */
-}
-
-/* Regra que já tínhamos, mas que agora funcionará corretamente */
-.chat-page-container {
-  display: flex;
-  height: 100%; /* Ocupa 100% do .main-content */
-}
-/* --- Estilos Globais e Reset --- */
-:root {
-  --primary-color: #00a884; /* Verde principal (similar ao WhatsApp) */
-  --secondary-color: #008069;
-  --background-light: #f0f2f5;
-  --background-chat: #e5ddd5;
-  --text-dark: #333;
-  --text-light: #f1f1f1;
-  --message-out-bg: #dcf8c6; /* Mensagem enviada */
-  --message-in-bg: #ffffff; /* Mensagem recebida */
-  --border-color: #e9edef;
-}
-
-* {
-  box-sizing: border-box;
+  height: 100vh; /* Define a altura para 100% da altura da janela */
   margin: 0;
   padding: 0;
-}
-
-body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  background-color: var(--background-light);
-  color: var(--text-dark);
-  overflow: hidden; /* Evita scroll na página inteira */
 }
 
-button {
-  cursor: pointer;
-  font-family: inherit;
-  border-radius: 8px;
-  padding: 10px 15px;
-  border: none;
-  font-size: 1rem;
-}
-
-input, textarea {
-  font-family: inherit;
-  width: 100%;
-  padding: 10px;
-  border: 1px solid #ccc;
-  border-radius: 8px;
-  margin-bottom: 10px;
-}
-
-/* --- Página de Login --- */
-.login-container {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  height: 100vh;
-  background-color: var(--background-light);
-}
-
-.login-form {
-  padding: 40px;
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  width: 100%;
-  max-width: 400px;
-  text-align: center;
-}
-
-.login-form h2 {
-  margin-bottom: 20px;
-}
-
-.login-form .form-group {
-  margin-bottom: 15px;
-  text-align: left;
-}
-
-.login-form label {
-  display: block;
-  margin-bottom: 5px;
-}
-
-.login-form button {
-  width: 100%;
-  background-color: var(--primary-color);
-  color: white;
-  transition: background-color 0.2s;
-}
-
-.login-form button:hover {
-  background-color: var(--secondary-color);
-}
-
-.login-form .error-message {
-  color: #d93025;
-  margin-top: 10px;
-}
-
-/* --- Layout Principal da Aplicação (Admin/Chat) --- */
+/* 2. Layout Principal da Aplicação */
 .app-layout {
   display: flex;
   flex-direction: column;
-  height: 100vh;
-}
-
-.app-header {
-  background-color: var(--primary-color);
-  color: white;
-  padding: 1rem;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-}
-
-.app-header h1 {
-  font-size: 1.5rem;
-}
-
-.app-header nav a {
-  color: white;
-  text-decoration: none;
-  margin: 0 10px;
-  font-weight: 500;
-}
-
-.app-header button {
-  background-color: transparent;
-  border: 1px solid white;
-  color: white;
+  height: 100%; /* Ocupa 100% da altura do seu pai (#root) */
 }
 
 .main-content {
-  flex-grow: 1;
-  overflow: hidden; /* Conteúdo principal não transborda */
+  flex-grow: 1; /* Faz o conteúdo principal crescer e ocupar o espaço restante */
+
 }
 
-/* --- Página do Administrador --- */
-.admin-page {
-  padding: 2rem;
-  height: calc(100vh - 70px); /* Desconta altura do header */
-  overflow-y: auto;
-}
-
-.command-manager {
-  display: grid;
-  grid-template-columns: 1fr 2fr;
-  gap: 2rem;
-}
-
-.command-form {
-  background: white;
-  padding: 1.5rem;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-}
-
-.command-form textarea {
-  min-height: 100px;
-  resize: vertical;
-}
-
-.command-form button[type="submit"] {
-  background-color: var(--primary-color);
-  color: white;
-  width: 100%;
-}
-
-.command-list table {
-  width: 100%;
-  border-collapse: collapse;
-  background: white;
-  border-radius: 8px;
-  overflow: hidden;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-}
-
-.command-list th, .command-list td {
-  padding: 12px 15px;
-  text-align: left;
-  border-bottom: 1px solid var(--border-color);
-}
-
-.command-list th {
-  background-color: #f8f9fa;
-}
-
-.command-list .actions button {
-  margin-right: 5px;
-  padding: 5px 10px;
-  font-size: 0.8rem;
-}
-.command-list .actions button.edit { background-color: #ffc107; }
-.command-list .actions button.delete { background-color: #dc3545; color: white; }
-
-/* --- Interface de Chat --- */
+/* 3. Layout da Página de Chat */
 .chat-page-container {
+  height: 100%; /* Ocupa 100% da altura do .main-content */
+  width: 100%;
   display: flex;
-  /* Define a altura total da área do chat para 100% da altura
-     da janela do navegador (vh) menos a altura do seu menu de navegação.
-     Se seu menu tem 56px de altura, use 56px. Se tiver 70px, use 70px. */
-  height: calc(100vh - 70px); 
 }
 
-.sidebar-chats {
-  width: 30%;
-  max-width: 400px;
-  min-width: 300px;
-  background: white;
-  border-right: 1px solid var(--border-color);
-  overflow-y: auto;
-}
-
-.chat-item {
-  padding: 1rem;
-  cursor: pointer;
-  border-bottom: 1px solid var(--border-color);
-  display: flex;
-  align-items: center;
-}
-.chat-item:hover { background-color: var(--background-light); }
-.chat-item.active { background-color: var(--border-color); }
-
-.chat-item-info {
-  margin-left: 10px;
-  overflow: hidden;
-}
-.chat-item-info strong { display: block; }
-.chat-item-info p {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: #666;
-}
-
+/* 4. Layout da Janela de Chat e Área de Mensagens */
 .chat-window {
-  flex-grow: 1;
-  background-color: var(--background-chat);
   display: flex;
   flex-direction: column;
+  height: 100%;
+  background-color: #e5ddd5;
+  min-height: 0; /* Truque de Flexbox para permitir que o filho encolha e role */
 }
 
-.chat-window-header {
+.chat-window-header, .chat-input-area {
+  flex-shrink: 0; /* Impede que o cabeçalho e a área de input encolham */
+  background-color: #f8f9fa;
   padding: 1rem;
-  background: var(--background-light);
-  border-bottom: 1px solid var(--border-color);
-}
-
-.messages-area {
-  flex-grow: 1;
-  padding: 1rem;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-}
-
-.message {
-  max-width: 70%;
-  padding: 8px 12px;
-  border-radius: 8px;
-  margin-bottom: 0.5rem;
-  word-wrap: break-word;
-}
-
-.message.from-me {
-  background-color: var(--message-out-bg);
-  align-self: flex-end;
-  border-bottom-right-radius: 0;
-}
-
-.message.from-them {
-  background-color: var(--message-in-bg);
-  align-self: flex-start;
-  border-bottom-left-radius: 0;
+  border-bottom: 1px solid #dee2e6;
 }
 
 .chat-input-area {
-  background: var(--background-light);
+  border-top: 1px solid #dee2e6;
+  border-bottom: none;
+}
+
+.messages-area {
+  flex-grow: 1; /* Ocupa o espaço restante */
+  overflow-y: auto; /* A MÁGICA: Adiciona a barra de rolagem vertical APENAS AQUI */
   padding: 1rem;
-}
-
-.command-bar {
-  padding-bottom: 10px;
-}
-.command-bar button {
-  margin: 2px;
-  padding: 6px 12px;
-  font-size: 0.8rem;
-  background-color: #e9edef;
-  border: 1px solid transparent;
-}
-.command-bar button:hover {
-  background-color: #d1d7db;
-}
-
-.message-input-form {
-  display: flex;
-  gap: 10px;
-}
-.message-input-form input {
-  flex-grow: 1;
-  margin: 0;
-}
-.message-input-form button {
-  background: var(--primary-color);
-  color: white;
 }

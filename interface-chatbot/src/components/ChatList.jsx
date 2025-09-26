@@ -1,60 +1,116 @@
 // src/components/ChatList.jsx
 
 import React from 'react';
-import { Button } from 'react-bootstrap';
-import './ChatList.css'; // Vamos criar um CSS para estilos adicionais
+import { Button, Badge, ButtonGroup, ToggleButton } from 'react-bootstrap';
+import './ChatList.css';
 
-function ChatList({ chats, onSelectChat, activeChatId, onAssumeChat, currentUser }) {
+const defaultAvatar = 'https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png';
 
-  // Formata o número para exibição (ex: 5511999998888@c.us -> 55 11 99999-8888)
-  const formatNumber = (number) => {
-    const cleanNumber = number.split('@')[0];
-    if (cleanNumber.length === 13) {
-      return `${cleanNumber.substring(0, 2)} ${cleanNumber.substring(2, 4)} ${cleanNumber.substring(4, 9)}-${cleanNumber.substring(9)}`;
+// Receba a prop 'onReopenChat' que estávamos usando antes
+function ChatList({ chats, onSelectChat, activeChatId, onAssumeChat, currentUser, filterStatus, onFilterChange, onReopenChat }) {
+
+  const formatNumber = (number) => number.split('@')[0];
+
+  const getLastMessageSnippet = (chat) => {
+    if (!chat.messages || chat.messages.length === 0) {
+      return "Nenhuma mensagem ainda";
     }
-    return cleanNumber;
+    const lastMessage = chat.messages[0];
+    if (lastMessage.media_type !== 'chat' && lastMessage.body) {
+      return `[Mídia] ${lastMessage.body.slice(0, 25)}...`;
+    }
+    if (lastMessage.media_type !== 'chat') {
+      const mediaTypeName = lastMessage.media_type.charAt(0).toUpperCase() + lastMessage.media_type.slice(1);
+      return `[${mediaTypeName}]`;
+    }
+    if (lastMessage.body) {
+      return lastMessage.body.slice(0, 35) + (lastMessage.body.length > 35 ? '...' : '');
+    }
+    return "Mensagem vazia";
   };
+  
+  const filters = [
+    { name: 'Abertos', value: 'open' },
+    { name: 'Todos', value: 'all' },
+  ];
 
   return (
     <div className="sidebar-chats">
       <div className="sidebar-header">
-        <h5>Conversas Abertas</h5>
+        <h5>Conversas</h5>
+        <ButtonGroup className="mt-2">
+          {filters.map((filter, idx) => (
+            <ToggleButton
+              key={idx}
+              id={`filter-${idx}`}
+              type="radio"
+              variant="outline-secondary"
+              name="filter"
+              value={filter.value}
+              checked={filterStatus === filter.value}
+              onChange={(e) => onFilterChange(e.currentTarget.value)}
+            >
+              {filter.name}
+            </ToggleButton>
+          ))}
+        </ButtonGroup>
       </div>
       <div className="chat-list-items">
         {chats.map((chat) => (
           <div 
             key={chat.id} 
             onClick={() => onSelectChat(chat)} 
-            className={`chat-item ${chat.id === activeChatId ? 'active' : ''}`}
+            className={`chat-item ${activeChatId === chat.id ? 'active' : ''} ${chat.status === 'closed' ? 'chat-item-closed' : ''}`}
           >
+            <img 
+              src={chat.profile_pic_url || defaultAvatar} 
+              alt="Avatar" 
+              className="chat-avatar" 
+            />
             <div className="chat-item-info">
-              <strong>{formatNumber(chat.whatsapp_number)}</strong>
+              <strong>{chat.name || formatNumber(chat.whatsapp_number)}</strong>
+              <p className="last-message-snippet">
+                {getLastMessageSnippet(chat)}
+              </p>
+
+              {/* === BLOCO DE CÓDIGO RESTAURADO ABAIXO === */}
+              <div className="status-container">
+                {chat.status === 'closed' ? (
+                  <Button 
+                    variant="info" 
+                    size="sm" 
+                    className="mt-1 w-100"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onReopenChat(chat.id);
+                    }}
+                  >
+                    Reabrir Atendimento
+                  </Button>
+                ) : chat.assignee ? (
+                  <span className="assigned-text">
+                    Atendido por: {chat.assignee.id === currentUser.id ? 'Você' : chat.assignee.name}
+                  </span>
+                ) : (
+                  <span className="unassigned-text">Aguardando atendimento</span>
+                )}
+              </div>
               
-              {chat.assignee ? (
-                <p className="assigned-text">
-                  Atendido por: {chat.assignee.id === currentUser.id ? 'Você' : chat.assignee.name}
-                </p>
-              ) : (
-                <p className="unassigned-text">Aguardando atendimento</p>
-              )}
-              
-              {!chat.assignee && (
+              {chat.status === 'open' && !chat.assignee && (
                 <Button 
                   variant="success" 
                   size="sm" 
                   className="mt-1 w-100"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onAssumeChat(chat.id);
-                  }}
+                  onClick={(e) => { e.stopPropagation(); onAssumeChat(chat.id); }}
                 >
                   Assumir
                 </Button>
               )}
+              {/* === FIM DO BLOCO RESTAURADO === */}
             </div>
           </div>
         ))}
-        {chats.length === 0 && <p className="text-center p-3 text-muted">Nenhum chat aberto.</p>}
+        {chats.length === 0 && <p className="text-center p-3 text-muted">Nenhum chat encontrado.</p>}
       </div>
     </div>
   );

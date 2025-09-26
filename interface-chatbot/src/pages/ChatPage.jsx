@@ -20,12 +20,15 @@ function ChatPage() {
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [error, setError] = useState('');
+  const [filterStatus, setFilterStatus] = useState('open');
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const chatsRes = await api.get('/chats/open');
+        // MUDANÇA: A URL agora usa o estado do filtro
+        const chatsRes = await api.get(`/chats?status=${filterStatus}`);
         setChats(chatsRes.data);
+        
         if (user.role === 'admin') {
           const usersRes = await api.get('/users');
           setUsers(usersRes.data);
@@ -35,7 +38,7 @@ function ChatPage() {
       }
     };
     fetchData();
-  }, [user.role]);
+  }, [user.role, filterStatus]);
 
   useEffect(() => {
     const handleNewMessage = (newMessage) => {
@@ -64,23 +67,110 @@ function ChatPage() {
     }
   };
 
-  const handleAssumeChat = async (chatId) => { /* ... */ };
-  const handleTransferChat = async (targetUserId) => { /* ... */ };
-  const handleCloseChat = async (chatId) => { /* ... */ };
-  const handleSendMessage = (text) => { /* ... */ };
+    const handleAssumeChat = async (chatId) => {
+    try {
+      // Chama a API para atribuir o chat ao usuário logado (user.id)
+      const response = await api.put(`/chats/${chatId}/assign`, { userId: user.id });
+      
+      // Atualiza a lista de chats na tela com a nova informação
+      setChats(prevChats => 
+        prevChats.map(chat => (chat.id === chatId ? response.data : chat))
+      );
+      
+      // Se o chat assumido for o que está ativo, atualiza ele também
+      if(activeChat?.id === chatId) {
+        setActiveChat(response.data);
+      }
+
+    } catch (err) {
+      setError('Não foi possível assumir o chat. Tente novamente.');
+    }
+  };
+  
+  const handleTransferChat = async (targetUserId) => {
+    if (!activeChat) return;
+    try {
+      const response = await api.put(`/chats/${activeChat.id}/assign`, { userId: targetUserId });
+      setChats(prevChats => 
+        prevChats.map(chat => (chat.id === activeChat.id ? response.data : chat))
+      );
+      setActiveChat(response.data);
+      setShowTransferModal(false);
+    } catch (err) {
+      setError('Não foi possível transferir o chat.');
+    }
+  };
+
+  const handleCloseChat = async (chatId) => {
+    if (window.confirm('Tem certeza que deseja finalizar este atendimento?')) {
+      try {
+        // A API agora retorna o chat atualizado
+        const response = await api.put(`/chats/${chatId}/close`);
+        
+        // MUDANÇA: Em vez de 'filter', usamos 'map' para ATUALIZAR o chat na lista
+        setChats(prevChats => 
+          prevChats.map(chat => (chat.id === chatId ? response.data : chat))
+        );
+
+        // Limpa o chat ativo se for o que foi fechado
+        if (activeChat?.id === chatId) {
+          setActiveChat(null);
+        }
+      } catch (err) {
+        setError('Não foi possível finalizar o atendimento.');
+      }
+    }
+  };
+
+  const handleSendMessage = (text) => {
+    if(!activeChat) return;
+
+    // Envia a mensagem via socket para o backend
+    socket.emit('enviar_mensagem', { to: activeChat.whatsapp_number, text });
+    
+    // Adiciona a mensagem do atendente localmente na tela para uma resposta visual imediata
+    const tempMessage = {
+        id: Date.now(),
+        body: text,
+        timestamp: Math.floor(Date.now() / 1000),
+        from_me: true,
+        media_type: 'chat',
+        chat_id: activeChat.id
+    }
+    setMessages(prev => [...prev, tempMessage]);
+  };
+  const handleReopenChat = async (chatId) => {
+    try {
+      const response = await api.put(`/chats/${chatId}/reopen`);
+      
+      // Atualiza o chat na lista com o novo status 'open'
+      setChats(prevChats => 
+        prevChats.map(chat => (chat.id === chatId ? response.data : chat))
+      );
+      
+      // Opcional: seleciona automaticamente o chat reaberto
+      setActiveChat(response.data);
+
+    } catch (err) {
+      setError('Não foi possível reabrir o atendimento.');
+    }
+  };
 
   return (
     // vh-100 garante 100% da viewport; se você tiver um header fixe, ajuste para calc(100vh - 56px)
-    <Container fluid className="p-0 vh-50">
-      <Row className="chat-page-container h-50" noGutters>
+    <Container fluid className="p-0 vh-100">
+      <Row className="chat-page-container h-100" noGutters>
         {error && <Alert variant="danger">{error}</Alert>}
-        <Col md={4} xl={3} className="h-50">
+        <Col md={4} xl={3} className="h-100">
           <ChatList
             chats={chats}
             activeChatId={activeChat?.id}
             onSelectChat={handleSelectChat}
             onAssumeChat={handleAssumeChat}
             currentUser={user}
+            filterStatus={filterStatus}
+            onFilterChange={setFilterStatus}
+            onReopenChat={handleReopenChat}
           />
         </Col>
         <Col md={8} xl={9} className="h-100">
