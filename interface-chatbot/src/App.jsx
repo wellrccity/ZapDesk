@@ -6,8 +6,6 @@ import { useAuth } from './context/AuthContext';
 // Importação dos Componentes e Páginas
 import LoginPage from './pages/LoginPage';
 import ChatPage from './pages/ChatPage';
-import AdminPage from './pages/AdminPage';
-import IntegrationManagementPage from './pages/IntegrationManagementPage';
 import UserManagementPage from './pages/UserManagementPage';
 import QRCodePage from './pages/QRCodePage';
 import FlowManagementPage from './pages/FlowManagementPage';
@@ -33,10 +31,8 @@ function AppContent() {
           </Route>
 
           <Route element={<ProtectedRoute adminOnly={true} />}>
-            <Route path="/admin/commands" element={<AdminPage />} />
             <Route path="/admin/users" element={<UserManagementPage />} />
             <Route path="/admin/connection" element={<QRCodePage />} />
-            <Route path="/admin/integrations" element={<IntegrationManagementPage />} />
             <Route path="/admin/flows" element={<FlowManagementPage />} />
             <Route path="/admin/flows/:flowId/edit" element={<FlowEditorPage />} />
           </Route>

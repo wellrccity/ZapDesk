@@ -9,6 +9,7 @@ module.exports = function(app) {
     app.post("/api/flows", controller.createFlow);
     app.get("/api/flows", controller.findAllFlows);
     app.get("/api/flows/:id", controller.findFlowById);
+    app.delete("/api/flows/:id", controller.deleteFlow); // <-- ROTA PARA APAGAR O FLUXO
 
     // Rotas para Etapas
     app.post("/api/flows/:flowId/steps", controller.addStepToFlow);

@@ -2,13 +2,13 @@
 import React from 'react';
 import { Card, Button } from 'react-bootstrap';
 
-function StepCard({ step, onEdit, onDelete }) {
+function StepCard({ step, onEdit, onDelete, stepIndex }) {
   return (
     <Card className="mb-3">
       <Card.Body>
         <div className="d-flex justify-content-between align-items-start">
           <div>
-            <Card.Title>Tipo: {step.step_type}</Card.Title>
+            <Card.Title>Etapa {stepIndex} (Tipo: {step.step_type})</Card.Title>
             <Card.Text>
               <strong>Mensagem:</strong> {step.message_body || 'N/A'}
             </Card.Text>

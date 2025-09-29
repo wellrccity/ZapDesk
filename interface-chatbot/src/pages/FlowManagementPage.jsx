@@ -8,12 +8,20 @@ function FlowManagementPage() {
   const [flows, setFlows] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [newFlowName, setNewFlowName] = useState('');
-  const [newFlowKeyword, setNewFlowKeyword] = useState('');
+  const [newFlowKeyword, setNewFlowKeyword] = useState('');  
+  const [isDefaultFlow, setIsDefaultFlow] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
     fetchFlows();
   }, []);
+
+  const resetModalState = () => {
+    setNewFlowName('');
+    setNewFlowKeyword('');
+    setIsDefaultFlow(false);
+    setShowModal(false);
+  };
 
   const fetchFlows = async () => {
     const response = await api.get('/flows');
@@ -21,8 +29,9 @@ function FlowManagementPage() {
   };
   
   const handleCreateFlow = async () => {
+    const payload = { name: newFlowName, trigger_keyword: isDefaultFlow ? '*' : newFlowKeyword };
     try {
-      const response = await api.post('/flows', { name: newFlowName, trigger_keyword: newFlowKeyword });
+      const response = await api.post('/flows', payload);
       // Após criar, navega para a página de edição do novo fluxo
       navigate(`/admin/flows/${response.data.id}/edit`);
     } catch(err) {
@@ -41,15 +50,18 @@ function FlowManagementPage() {
           <ListGroup>
             {flows.map(flow => (
               <ListGroup.Item action as={Link} to={`/admin/flows/${flow.id}/edit`} key={flow.id}>
-                <div className="fw-bold">{flow.name}</div>
-                Disparado pela palavra-chave: `{flow.trigger_keyword}`
+                <div className="fw-bold">{flow.name} {flow.trigger_keyword === '*' && <span className="badge bg-info ms-2">Padrão</span>}</div>
+                {flow.trigger_keyword === '*' 
+                  ? <span className="text-muted">Disparado quando nenhum outro comando corresponde.</span>
+                  : <span>Disparado pela palavra-chave: `{flow.trigger_keyword}`</span>
+                }
               </ListGroup.Item>
             ))}
           </ListGroup>
         </Card.Body>
       </Card>
 
-      <Modal show={showModal} onHide={() => setShowModal(false)}>
+      <Modal show={showModal} onHide={resetModalState}>
         <Modal.Header closeButton>
           <Modal.Title>Criar Novo Fluxo</Modal.Title>
         </Modal.Header>
@@ -58,13 +70,24 @@ function FlowManagementPage() {
             <Form.Label>Nome do Fluxo</Form.Label>
             <Form.Control type="text" value={newFlowName} onChange={e => setNewFlowName(e.target.value)} placeholder="Ex: Suporte Técnico" />
           </Form.Group>
+          <Form.Group className="mb-3">
+            <Form.Check 
+              type="checkbox"
+              label="Usar como fluxo padrão (fallback)"
+              checked={isDefaultFlow}
+              onChange={e => setIsDefaultFlow(e.target.checked)}
+            />
+            <Form.Text className="text-muted">
+              Será acionado se a mensagem do usuário não corresponder a nenhuma outra palavra-chave. Só pode haver um fluxo padrão.
+            </Form.Text>
+          </Form.Group>
           <Form.Group>
             <Form.Label>Palavra-Chave de Início</Form.Label>
-            <Form.Control type="text" value={newFlowKeyword} onChange={e => setNewFlowKeyword(e.target.value)} placeholder="Ex: !suporte (sem espaços, minúsculo)" />
+            <Form.Control type="text" value={newFlowKeyword} onChange={e => setNewFlowKeyword(e.target.value)} placeholder="Ex: !suporte (sem espaços, minúsculo)" disabled={isDefaultFlow} />
           </Form.Group>
         </Modal.Body>
         <Modal.Footer>
-          <Button variant="secondary" onClick={() => setShowModal(false)}>Cancelar</Button>
+          <Button variant="secondary" onClick={resetModalState}>Cancelar</Button>
           <Button variant="primary" onClick={handleCreateFlow}>Criar e Editar</Button>
         </Modal.Footer>
       </Modal>

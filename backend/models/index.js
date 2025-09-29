@@ -21,7 +21,7 @@ db.integrations = require("./integration.model.js")(sequelize, Sequelize);
 db.flows = require("./flow.model.js")(sequelize, Sequelize);
 db.flow_steps = require("./flow_step.model.js")(sequelize, Sequelize);
 db.poll_options = require("./poll_option.model.js")(sequelize, Sequelize);
-//db.form_submissions = require("./form_submissions.model.js")(sequelize, Sequelize);
+db.form_submissions = require("./form_submissions.model.js")(sequelize, Sequelize);
 //db.contacts = require("./contacts.model.js")(sequelize, Sequelize);
 
 // --- Definindo as Relações (Associações) ---

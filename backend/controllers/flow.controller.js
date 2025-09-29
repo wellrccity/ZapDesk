@@ -5,37 +5,35 @@ const FlowStep = db.flow_steps;
 const PollOption = db.poll_options;
 
 // --- Fluxos Principais ---
-// SUBSTITUA A FUNÇÃO 'createFlow' PELA VERSÃO ABAIXO
 exports.createFlow = async (req, res) => {
-  // Usamos uma 'transaction' para garantir que ou tudo dá certo, ou nada é salvo.
   const transaction = await db.sequelize.transaction();
+  const { name, trigger_keyword } = req.body;
+
+  if (trigger_keyword === '*') {
+    const existingDefault = await Flow.findOne({ where: { trigger_keyword: '*' } });
+    if (existingDefault) {
+      return res.status(400).send({ message: "Já existe um fluxo padrão. Só é permitido um." });
+    }
+  }
 
   try {
-    // 1. Cria o fluxo principal dentro da transação
     const newFlow = await Flow.create({
       name: req.body.name,
       trigger_keyword: req.body.trigger_keyword
     }, { transaction });
 
-    // 2. Cria uma primeira etapa padrão para este fluxo
     const initialStep = await FlowStep.create({
       flow_id: newFlow.id,
       step_type: 'MESSAGE',
       message_body: 'Bem-vindo ao seu novo fluxo! Edite esta primeira etapa para começar.'
     }, { transaction });
 
-    // 3. ATUALIZA o fluxo para apontar para sua primeira etapa
     newFlow.initial_step_id = initialStep.id;
     await newFlow.save({ transaction });
 
-    // 4. Se tudo deu certo, confirma a transação
     await transaction.commit();
-    
-    // 5. Envia o fluxo completo de volta para o frontend
     res.send(newFlow);
-
   } catch (error) {
-    // 6. Se algo deu errado, desfaz todas as operações
     await transaction.rollback();
     console.error("Erro ao criar fluxo:", error);
     res.status(500).send({ message: "Erro ao criar fluxo: " + error.message });
@@ -57,31 +55,127 @@ exports.findFlowById = (req, res) => {
   }).then(d => res.send(d)).catch(e => res.status(500).send(e));
 };
 
+exports.deleteFlow = async (req, res) => {
+  const { id } = req.params;
+  const transaction = await db.sequelize.transaction();
+  try {
+    // Encontra todas as etapas associadas ao fluxo
+    const steps = await FlowStep.findAll({ where: { flow_id: id }, attributes: ['id'], transaction });
+    const stepIds = steps.map(s => s.id);
+
+    // Apaga as opções de enquete dessas etapas, se houver
+    if (stepIds.length > 0) {
+      await PollOption.destroy({ where: { step_id: stepIds }, transaction });
+    }
+
+    // Apaga as etapas
+    await FlowStep.destroy({ where: { flow_id: id }, transaction });
+
+    // Apaga o fluxo
+    await Flow.destroy({ where: { id: id }, transaction });
+
+    await transaction.commit();
+    res.send({ message: "Fluxo e todas as suas etapas foram deletados com sucesso." });
+  } catch (e) {
+    await transaction.rollback();
+    res.status(500).send({ message: "Erro ao deletar o fluxo.", error: e.message });
+  }
+};
+
 // --- Etapas do Fluxo ---
+// SUBSTITUA a função 'addStepToFlow' por esta:
 exports.addStepToFlow = async (req, res) => {
     const { flowId } = req.params;
-    const { message_body, step_type, poll_options } = req.body;
+    // Agora esperamos receber 'next_step_id' também
+    const { message_body, step_type, form_field_key, next_step_id, poll_options, db_dialect, db_host, db_port, db_user, db_pass, db_name, db_table, extra_sql,
+            db_query, db_query_result_mapping } = req.body;
+    const transaction = await db.sequelize.transaction();
     try {
         const newStep = await FlowStep.create({
             flow_id: flowId,
             message_body,
-            step_type
-        });
+            step_type,
+            form_field_key,
+            next_step_id, // <-- SALVA o próximo passo para MESSAGE e QUESTION_TEXT
+            // Database integration fields (only relevant for FORM_SUBMIT)
+            db_dialect,
+            db_host,
+            db_port,
+            db_user,
+            db_pass,
+            db_name,
+            db_table,
+            extra_sql,
+            db_query,
+            db_query_result_mapping
+        }, { transaction });
 
         if (step_type === 'QUESTION_POLL' && poll_options) {
             for (const opt of poll_options) {
                 await PollOption.create({
                     step_id: newStep.id,
                     option_text: opt.option_text,
-                    // Por padrão, novas opções apontam para si mesmas para evitar erros
-                    next_step_id_on_select: newStep.id
-                });
+                    trigger_keyword: opt.trigger_keyword,
+                    // Salva o próximo passo definido pelo admin
+                    next_step_id_on_select: opt.next_step_id_on_select 
+                }, { transaction });
             }
         }
+        await transaction.commit();
         res.send(newStep);
     } catch(e) {
+        await transaction.rollback();
         res.status(500).send(e);
     }
 };
-exports.updateStep = (req, res) => FlowStep.update(req.body, { where: { id: req.params.stepId } }).then(() => res.send({ message: "Etapa atualizada."})).catch(e => res.status(500).send(e));
+
+
+exports.updateStep = async (req, res) => {
+    const { stepId } = req.params;
+    // Recebe 'next_step_id' aqui também
+    const { message_body, step_type, form_field_key, next_step_id, poll_options, db_dialect, db_host, db_port, db_user, db_pass, db_name, db_table, extra_sql,
+            db_query, db_query_result_mapping } = req.body;
+    const transaction = await db.sequelize.transaction();
+    try {
+        // Atualiza os dados principais, incluindo o 'next_step_id'
+        await FlowStep.update(
+            { message_body, step_type, form_field_key, next_step_id,
+              // Database integration fields (only relevant for FORM_SUBMIT)
+              db_dialect,
+              db_host,
+              db_port,
+              db_user,
+              db_pass,
+              db_name,
+              db_table,
+              extra_sql,
+              db_query,
+              db_query_result_mapping
+            },
+            { where: { id: stepId }, transaction }
+        );
+
+        // 2. Se for uma enquete, atualiza as opções
+        if (step_type === 'QUESTION_POLL' && poll_options) {
+            // Apaga as opções antigas
+            await PollOption.destroy({ where: { step_id: stepId }, transaction });
+            // Cria as novas opções com os novos destinos
+            for (const opt of poll_options) {
+                await PollOption.create({
+                    step_id: stepId,
+                    option_text: opt.option_text,
+                    trigger_keyword: opt.trigger_keyword,
+                    next_step_id_on_select: opt.next_step_id_on_select
+                }, { transaction });
+            }
+        }
+        
+        await transaction.commit();
+        res.send({ message: "Etapa atualizada."});
+    } catch(e) {
+        await transaction.rollback();
+        res.status(500).send(e);
+    }
+};
+
 exports.deleteStep = (req, res) => FlowStep.destroy({ where: { id: req.params.stepId } }).then(() => res.send({ message: "Etapa deletada."})).catch(e => res.status(500).send(e));
