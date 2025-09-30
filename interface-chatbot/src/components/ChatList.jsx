@@ -91,22 +91,25 @@ function ChatList({ chats, onSelectChat, activeChatId, onAssumeChat, currentUser
                   <span className="assigned-text">
                     Atendido por: {chat.assignee.id === currentUser.id ? 'Você' : chat.assignee.name}
                   </span>
+                ) : chat.status === 'autoatendimento' ? (
+                  <span className="unassigned-text text-primary">
+                    Em autoatendimento
+                  </span>
                 ) : (
-                  <span className="unassigned-text">Aguardando atendimento</span>
+                  // CORREÇÃO: O botão "Assumir" agora está dentro do bloco correto.
+                  <>
+                    <span className="unassigned-text">Aguardando atendimento</span>
+                    <Button 
+                      variant="success" 
+                      size="sm" 
+                      className="mt-1 w-100"
+                      onClick={(e) => { e.stopPropagation(); onAssumeChat(chat.id); }}
+                    >
+                      Assumir
+                    </Button>
+                  </>
                 )}
               </div>
-              
-              {chat.status === 'open' && !chat.assignee && (
-                <Button 
-                  variant="success" 
-                  size="sm" 
-                  className="mt-1 w-100"
-                  onClick={(e) => { e.stopPropagation(); onAssumeChat(chat.id); }}
-                >
-                  Assumir
-                </Button>
-              )}
-              {/* === FIM DO BLOCO RESTAURADO === */}
             </div>
           </div>
         ))}

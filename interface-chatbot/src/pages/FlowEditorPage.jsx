@@ -41,11 +41,17 @@ function FlowEditorPage() {
     try {
       if (stepData.id) { // Editando uma etapa existente
         await api.put(`/steps/${stepData.id}`, stepData);
+        fetchFlowData(); // Recarrega tudo ao editar
       } else { // Criando uma nova etapa
-        await api.post(`/flows/${flowId}/steps`, stepData);
+        // CORREÇÃO: Garante que o step_type seja enviado na criação.
+        const payload = {
+          ...stepData,
+        };
+        const response = await api.post(`/flows/${flowId}/steps`, payload);
+        // CORREÇÃO: Usa a resposta da API para atualizar o estado localmente.
+        setFlow(prevFlow => ({ ...prevFlow, steps: [...prevFlow.steps, response.data] }));
       }
       setShowStepModal(false);
-      fetchFlowData(); // Recarrega os dados para mostrar as mudanças
     } catch(err) {
         alert("Erro ao salvar a etapa.");
     }

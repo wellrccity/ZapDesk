@@ -87,7 +87,7 @@ exports.deleteFlow = async (req, res) => {
 exports.addStepToFlow = async (req, res) => {
     const { flowId } = req.params;
     // Agora esperamos receber 'next_step_id' também
-    const { message_body, step_type, form_field_key, next_step_id, poll_options, db_dialect, db_host, db_port, db_user, db_pass, db_name, db_table, extra_sql,
+    const { message_body, step_type, form_field_key, next_step_id, next_step_id_on_fail, poll_options, db_dialect, db_host, db_port, db_user, db_pass, db_name, db_table, extra_sql,
             db_query, db_query_result_mapping } = req.body;
     const transaction = await db.sequelize.transaction();
     try {
@@ -97,6 +97,7 @@ exports.addStepToFlow = async (req, res) => {
             step_type,
             form_field_key,
             next_step_id, // <-- SALVA o próximo passo para MESSAGE e QUESTION_TEXT
+            next_step_id_on_fail, // <-- SALVA o passo em caso de falha
             // Database integration fields (only relevant for FORM_SUBMIT)
             db_dialect,
             db_host,
@@ -122,7 +123,10 @@ exports.addStepToFlow = async (req, res) => {
             }
         }
         await transaction.commit();
-        res.send(newStep);
+        // CORREÇÃO: Busca a etapa recém-criada com todas as suas associações
+        // para garantir que o objeto retornado esteja completo.
+        const finalStep = await FlowStep.findByPk(newStep.id, { include: [{ model: PollOption, as: 'poll_options' }] });
+        res.send(finalStep);
     } catch(e) {
         await transaction.rollback();
         res.status(500).send(e);
@@ -133,13 +137,13 @@ exports.addStepToFlow = async (req, res) => {
 exports.updateStep = async (req, res) => {
     const { stepId } = req.params;
     // Recebe 'next_step_id' aqui também
-    const { message_body, step_type, form_field_key, next_step_id, poll_options, db_dialect, db_host, db_port, db_user, db_pass, db_name, db_table, extra_sql,
+    const { message_body, step_type, form_field_key, next_step_id, next_step_id_on_fail, poll_options, db_dialect, db_host, db_port, db_user, db_pass, db_name, db_table, extra_sql,
             db_query, db_query_result_mapping } = req.body;
     const transaction = await db.sequelize.transaction();
     try {
         // Atualiza os dados principais, incluindo o 'next_step_id'
         await FlowStep.update(
-            { message_body, step_type, form_field_key, next_step_id,
+            { message_body, step_type, form_field_key, next_step_id, next_step_id_on_fail,
               // Database integration fields (only relevant for FORM_SUBMIT)
               db_dialect,
               db_host,

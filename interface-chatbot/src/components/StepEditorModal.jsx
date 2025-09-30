@@ -59,6 +59,7 @@ function StepEditorModal({ show, onHide, onSave, currentStep, allSteps }) {
               <option value="QUESTION_POLL">Pergunta (Enquete/Menu)</option>
               <option value="FORM_SUBMIT">Finalizar e Enviar Formulário</option>
               <option value="END_FLOW">Finalizar Fluxo</option>
+              <option value="REQUEST_HUMAN_SUPPORT">Solicitar Atendimento Humano</option>
             </Form.Select>
           </Form.Group>
 
@@ -66,6 +67,10 @@ function StepEditorModal({ show, onHide, onSave, currentStep, allSteps }) {
             <Form.Label>Texto da Mensagem do Bot</Form.Label>
             <Form.Control as="textarea" rows={3} name="message_body" value={stepData.message_body || ''} onChange={handleChange} />
           </Form.Group>
+
+          {stepData.step_type === 'REQUEST_HUMAN_SUPPORT' && (
+            <Form.Text className="d-block mb-3 p-2 bg-info bg-opacity-10 border border-info rounded">Esta etapa irá remover o cliente do fluxo e criar um chat para atendimento humano. A mensagem acima será enviada antes da transição.</Form.Text>
+          )}
 
           {/* --- CAMPO PARA DEFINIR O PRÓXIMO PASSO (PARA FLUXOS LINEARES) --- */}
           {(stepData.step_type === 'MESSAGE' || stepData.step_type === 'QUESTION_TEXT') && (
@@ -111,6 +116,23 @@ function StepEditorModal({ show, onHide, onSave, currentStep, allSteps }) {
                 <Form.Label>Query SQL</Form.Label>
                 <Form.Control as="textarea" rows={3} name="db_query" value={stepData.db_query || ''} onChange={handleChange} placeholder="SELECT nome, email FROM clientes WHERE matricula = :userInput" />
                 <Form.Text>Use <strong>:userInput</strong> como placeholder para a resposta do usuário.</Form.Text>
+              </Form.Group>
+
+              <Form.Group className="mb-3">
+                <Form.Label>Caso a consulta não retorne resultados:</Form.Label>
+                <Form.Select
+                  name="next_step_id_on_fail"
+                  value={stepData.next_step_id_on_fail || "null"}
+                  onChange={handleChange}
+                >
+                  <option value="null">Finalizar o fluxo</option>
+                  {allSteps.map((step, index) => (
+                    step.id !== stepData.id &&
+                    <option key={step.id} value={step.id}>
+                      Ir para Etapa {index + 1} ({step.step_type})
+                    </option>
+                  ))}
+                </Form.Select>
               </Form.Group>
 
               <Form.Group className="mb-3">

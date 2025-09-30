@@ -7,6 +7,7 @@ const User = db.users;
 
 // Busca todos os chats com base no filtro de status
 exports.findAll = async (req, res) => {
+  const { userConversationStates } = req; // Pega o objeto do 'req'
   const { status } = req.query;
   let whereClause = {};
 
@@ -23,7 +24,14 @@ exports.findAll = async (req, res) => {
       ],
       order: [['updatedAt', 'DESC']]
     });
-    res.send(chats);
+
+    // Adiciona o status 'inFlow' a cada chat
+    const chatsWithFlowStatus = chats.map(chat => {
+        const chatJson = chat.toJSON();
+        chatJson.inFlow = !!(userConversationStates && userConversationStates[chat.whatsapp_number]);
+        return chatJson;
+    });
+    res.send(chatsWithFlowStatus);
   } catch (error) {
     res.status(500).send({ message: "Erro ao buscar chats: " + error.message });
   }

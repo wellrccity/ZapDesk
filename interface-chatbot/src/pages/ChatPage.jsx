@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Container, Row, Col, Alert } from 'react-bootstrap';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { Container, Row, Col, Alert, Badge, Spinner } from 'react-bootstrap';
 import io from 'socket.io-client';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -7,6 +7,7 @@ import { toast } from 'react-toastify';
 
 import ChatList from '../components/ChatList';
 import ChatWindow from '../components/ChatWindow';
+import { Bell } from 'react-bootstrap-icons';
 import TransferChatModal from '../components/TransferChatModal';
 
 // A instância do socket é criada fora do componente para evitar múltiplas conexões
@@ -24,6 +25,21 @@ function ChatPage() {
   const [error, setError] = useState(''); // Mensagens de erro
   const [filterStatus, setFilterStatus] = useState('open'); // Estado do filtro ('open' ou 'all')
 
+  // --- Dados Derivados (Memos) ---
+  const pendingChatsCount = useMemo(() => {
+    // CORREÇÃO: Conta apenas chats com status 'open' (aguardando) e sem atendente.
+    return chats.filter(chat => chat.status === 'open' && !chat.assigned_to).length;
+  }, [chats]);
+
+  // --- Funções de Busca de Dados ---
+  const fetchChats = useCallback(async () => {
+    try {
+      const chatsRes = await api.get(`/chats?status=${filterStatus}`);
+      setChats(chatsRes.data);
+    } catch (err) {
+      console.error('Falha ao buscar chats:', err);
+    }
+  }, [filterStatus]); // A função só será recriada se o filtro mudar.
   // --- Efeitos (Lifecycle) ---
 
   // Efeito para buscar dados iniciais e configurar listeners de socket
@@ -31,8 +47,7 @@ function ChatPage() {
     // 1. Busca os dados iniciais (chats e usuários)
     const fetchData = async () => {
       try {
-        const chatsRes = await api.get(`/chats?status=${filterStatus}`);
-        setChats(chatsRes.data);
+        await fetchChats();
         if (user.role === 'admin') {
           const usersRes = await api.get('/users');
           setUsers(usersRes.data);
@@ -48,11 +63,12 @@ function ChatPage() {
 
     // 3. Listener para ATUALIZAÇÕES DE CHAT (eventos de outros usuários)
     const handleChatUpdated = (updatedChat) => {
-      setChats(prevChats =>
-        prevChats.map(c => (c.id === updatedChat.id ? updatedChat : c))
-      );
+      // CORREÇÃO: Busca a lista de chats novamente para garantir que chats
+      // que foram reabertos (e não estavam na lista) agora apareçam.
+      fetchChats();
       if (activeChat?.id === updatedChat.id) {
-        setActiveChat(updatedChat);
+        // Atualiza os dados do chat ativo para refletir mudanças (ex: status, atendente)
+        setActiveChat(prevActiveChat => ({ ...prevActiveChat, ...updatedChat }));
       }
     };
 
@@ -76,16 +92,30 @@ function ChatPage() {
 
   // Efeito para ouvir NOVAS MENSAGENS do chat que está ativo
   useEffect(() => {
-    const handleNewMessage = (newMessage) => {
-      if (newMessage.chat_id === activeChat?.id) {
+    const handleNewMessage = async (newMessage) => {
+      // CORREÇÃO: Busca a lista de chats para que o chat com a nova mensagem
+      // vá para o topo e para que chats reabertos apareçam.
+      await fetchChats();
+
+      // Se a mensagem pertence ao chat ativo, adiciona à lista de mensagens visível
+      if (activeChat && newMessage.chat_id === activeChat.id) {
         setMessages(prevMessages => [...prevMessages, newMessage]);
+      } else {
+        // Se a mensagem é de um chat que não está ativo (incluindo fechados)
+        const chatDaMensagem = chats.find(c => c.id === newMessage.chat_id);
+        // Se o chat estava fechado e agora foi reaberto (e está na lista)
+        // ou se simplesmente não estava ativo, vamos selecioná-lo.
+        if (chatDaMensagem && chatDaMensagem.status === 'open' && activeChat?.id !== chatDaMensagem.id) {
+            // Seleciona o chat para o usuário ver a nova mensagem.
+            handleSelectChat(chatDaMensagem);
+        }
       }
     };
     socket.on('nova_mensagem', handleNewMessage);
     return () => {
       socket.off('nova_mensagem', handleNewMessage);
     };
-  }, [activeChat]); // Reativa o listener se o chat ativo mudar
+  }, [activeChat, fetchChats]); // Agora fetchChats é estável
 
   // --- Funções de Ação (Handlers) ---
 
@@ -160,8 +190,22 @@ function ChatPage() {
 
   return (
     <Container fluid className="p-0 vh-100">
-      <Row className="chat-page-container h-100 g-0">
-        {error && <Alert variant="danger">{error}</Alert>}
+      {/* CORREÇÃO: O contêiner relativo agora é a própria linha do chat */}
+      <Row className="chat-page-container h-100 g-0" style={{ position: 'relative' }}>
+        {error && <Alert variant="danger" className="m-3">{error}</Alert>}
+
+        {/* Ícone de Notificação Fixo */}
+        <div style={{ position: 'absolute', top: '15px', right: '25px', zIndex: 1000 }}>
+          <Bell size={24} className="text-secondary" />
+          {pendingChatsCount > 0 && (
+            <Badge pill bg="danger" style={{
+              position: 'absolute', top: '-8px', right: '-10px',
+              fontSize: '0.7rem', border: '2px solid white'
+            }}>
+              {pendingChatsCount}
+            </Badge>
+          )}
+        </div>
         
         <Col md={4} xl={3} className="border-end h-100">
           <ChatList
