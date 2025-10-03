@@ -10,6 +10,7 @@ import UserManagementPage from './pages/UserManagementPage';
 import QRCodePage from './pages/QRCodePage';
 import FlowManagementPage from './pages/FlowManagementPage';
 import FlowEditorPage from './pages/FlowEditorPage';
+import ContactPage from './pages/ContactPage'; // Importando a página de contatos
 import ProtectedRoute from './components/ProtectedRoute';
 import NavbarComponent from './components/NavbarComponent';
 import { ToastContainer } from 'react-toastify';
@@ -28,6 +29,7 @@ function AppContent() {
           
           <Route element={<ProtectedRoute />}>
             <Route path="/chat" element={<ChatPage />} />
+            <Route path="/contacts" element={<ContactPage />} />
           </Route>
 
           <Route element={<ProtectedRoute adminOnly={true} />}>

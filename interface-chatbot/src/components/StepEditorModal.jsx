@@ -59,6 +59,12 @@ function StepEditorModal({ show, onHide, onSave, currentStep, allSteps }) {
               <option value="QUESTION_POLL">Pergunta (Enquete/Menu)</option>
               <option value="FORM_SUBMIT">Finalizar e Enviar Formulário</option>
               <option value="END_FLOW">Finalizar Fluxo</option>
+              <option value="LIST_CHATS">Listar Atendimentos</option>
+              {/* --- NOVAS ETAPAS DE AÇÃO --- */}
+              <option value="ASSIGN_CHAT">[AÇÃO] Assumir Atendimento</option>
+              <option value="ENTER_CONVERSATION_MODE">[AÇÃO] Entrar em Modo Conversa</option>
+              <option value="CLOSE_CHAT">[AÇÃO] Encerrar Atendimento</option>
+
               <option value="REQUEST_HUMAN_SUPPORT">Solicitar Atendimento Humano</option>
             </Form.Select>
           </Form.Group>
@@ -70,6 +76,29 @@ function StepEditorModal({ show, onHide, onSave, currentStep, allSteps }) {
 
           {stepData.step_type === 'REQUEST_HUMAN_SUPPORT' && (
             <Form.Text className="d-block mb-3 p-2 bg-info bg-opacity-10 border border-info rounded">Esta etapa irá remover o cliente do fluxo e criar um chat para atendimento humano. A mensagem acima será enviada antes da transição.</Form.Text>
+          )}
+
+          {stepData.step_type === 'ASSIGN_CHAT' && (
+            <Form.Text className="d-block mb-3 p-2 bg-primary bg-opacity-10 border border-primary rounded"><b>Ação:</b> Esta etapa irá atribuir um chat ao atendente. Ela espera que o ID do chat tenha sido salvo em uma variável de formulário (ex: `chat_id`) em uma etapa anterior.</Form.Text>
+          )}
+
+          {stepData.step_type === 'ENTER_CONVERSATION_MODE' && (
+            <Form.Text className="d-block mb-3 p-2 bg-primary bg-opacity-10 border border-primary rounded"><b>Ação:</b> Coloca o atendente em "modo conversa" com o cliente do chat assumido. Tudo que ele digitar será enviado ao cliente até que o atendimento seja encerrado.</Form.Text>
+          )}
+
+          {stepData.step_type === 'CLOSE_CHAT' && (
+            <Form.Text className="d-block mb-3 p-2 bg-primary bg-opacity-10 border border-primary rounded"><b>Ação:</b> Finaliza o atendimento ativo, envia uma mensagem de despedida ao cliente e tira o atendente do "modo conversa".</Form.Text>
+          )}
+
+          {/* --- OPÇÕES PARA LISTAR ATENDIMENTOS --- */}
+          {stepData.step_type === 'LIST_CHATS' && (
+            <Form.Group className="mb-3 p-3 bg-light border rounded">
+              <Form.Label className="fw-bold">Opções da Listagem</Form.Label>
+              <Form.Select name="form_field_key" value={stepData.form_field_key || 'open'} onChange={handleChange}>
+                <option value="open">Listar atendimentos Abertos/Aguardando</option>
+                <option value="closed">Listar atendimentos Encerrados</option>
+              </Form.Select>
+            </Form.Group>
           )}
 
           {/* --- CAMPO PARA DEFINIR O PRÓXIMO PASSO (PARA FLUXOS LINEARES) --- */}

@@ -9,6 +9,7 @@ function FlowManagementPage() {
   const [showModal, setShowModal] = useState(false);
   const [newFlowName, setNewFlowName] = useState('');
   const [newFlowKeyword, setNewFlowKeyword] = useState('');  
+  const [newFlowTarget, setNewFlowTarget] = useState('customer'); // Novo estado
   const [isDefaultFlow, setIsDefaultFlow] = useState(false);
   const navigate = useNavigate();
 
@@ -19,6 +20,7 @@ function FlowManagementPage() {
   const resetModalState = () => {
     setNewFlowName('');
     setNewFlowKeyword('');
+    setNewFlowTarget('customer');
     setIsDefaultFlow(false);
     setShowModal(false);
   };
@@ -29,7 +31,11 @@ function FlowManagementPage() {
   };
   
   const handleCreateFlow = async () => {
-    const payload = { name: newFlowName, trigger_keyword: isDefaultFlow ? '*' : newFlowKeyword };
+    const payload = { 
+      name: newFlowName, 
+      trigger_keyword: isDefaultFlow ? '*' : newFlowKeyword,
+      target_audience: newFlowTarget // Envia o público-alvo
+    };
     try {
       const response = await api.post('/flows', payload);
       // Após criar, navega para a página de edição do novo fluxo
@@ -38,6 +44,16 @@ function FlowManagementPage() {
       alert("Erro ao criar fluxo. A palavra-chave já pode existir.");
     }
   };
+
+  const getTargetAudienceBadge = (target) => {
+    const styles = {
+      customer: { bg: 'secondary', text: 'Cliente' },
+      agent: { bg: 'primary', text: 'Atendente' },
+      admin: { bg: 'warning', text: 'Admin' },
+    };
+    const style = styles[target] || styles.customer;
+    return <span className={`badge bg-${style.bg} ms-2`}>{style.text}</span>;
+  }
 
   return (
     <Container fluid className="p-4">
@@ -50,7 +66,11 @@ function FlowManagementPage() {
           <ListGroup>
             {flows.map(flow => (
               <ListGroup.Item action as={Link} to={`/admin/flows/${flow.id}/edit`} key={flow.id}>
-                <div className="fw-bold">{flow.name} {flow.trigger_keyword === '*' && <span className="badge bg-info ms-2">Padrão</span>}</div>
+                <div className="fw-bold">
+                  {flow.name} 
+                  {flow.trigger_keyword === '*' && <span className="badge bg-info ms-2">Padrão</span>}
+                  {getTargetAudienceBadge(flow.target_audience)}
+                </div>
                 {flow.trigger_keyword === '*' 
                   ? <span className="text-muted">Disparado quando nenhum outro comando corresponde.</span>
                   : <span>Disparado pela palavra-chave: `{flow.trigger_keyword}`</span>
@@ -69,6 +89,14 @@ function FlowManagementPage() {
           <Form.Group className="mb-3">
             <Form.Label>Nome do Fluxo</Form.Label>
             <Form.Control type="text" value={newFlowName} onChange={e => setNewFlowName(e.target.value)} placeholder="Ex: Suporte Técnico" />
+          </Form.Group>
+          <Form.Group className="mb-3">
+            <Form.Label>Público-Alvo do Fluxo</Form.Label>
+            <Form.Select value={newFlowTarget} onChange={e => setNewFlowTarget(e.target.value)}>
+              <option value="customer">Cliente (Padrão)</option>
+              <option value="agent">Atendente</option>
+              <option value="admin">Administrador</option>
+            </Form.Select>
           </Form.Group>
           <Form.Group className="mb-3">
             <Form.Check 

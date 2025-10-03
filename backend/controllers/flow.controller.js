@@ -7,7 +7,7 @@ const PollOption = db.poll_options;
 // --- Fluxos Principais ---
 exports.createFlow = async (req, res) => {
   const transaction = await db.sequelize.transaction();
-  const { name, trigger_keyword } = req.body;
+  const { name, trigger_keyword, target_audience } = req.body;
 
   if (trigger_keyword === '*') {
     const existingDefault = await Flow.findOne({ where: { trigger_keyword: '*' } });
@@ -19,7 +19,8 @@ exports.createFlow = async (req, res) => {
   try {
     const newFlow = await Flow.create({
       name: req.body.name,
-      trigger_keyword: req.body.trigger_keyword
+      trigger_keyword: req.body.trigger_keyword,
+      target_audience: target_audience || 'customer'
     }, { transaction });
 
     const initialStep = await FlowStep.create({

@@ -8,6 +8,14 @@ import './MessageBubble.css'; // Criaremos este CSS
 import { FileEarmarkTextFill, FileEarmarkZipFill, FileEarmarkMusicFill, FileEarmarkPlayFill } from 'react-bootstrap-icons';
 
 function MessageBubble({ message, isFromMe }) {
+  const formatTimestamp = (timestamp) => {
+    if (!timestamp) return '';
+    return new Date(timestamp * 1000).toLocaleTimeString('pt-BR', {
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
   const renderMedia = () => {
     switch (message.media_type) {
       case 'image':
@@ -48,10 +56,11 @@ function MessageBubble({ message, isFromMe }) {
   };
 
   return (
-    <div className={`message-container ${isFromMe ? 'from-me' : 'from-them'}`}>
-      <div className="message-bubble">
+    <div className={`d-flex ${isFromMe ? 'justify-content-end' : 'justify-content-start'}`}>
+      <div className={`message-bubble ${isFromMe ? 'from-me' : 'from-them'}`}>
         {message.media_url && renderMedia()}
-        {message.body && <p className="message-text">{message.body}</p>}
+        {message.body && <div className="message-text">{message.body}</div>}
+        <span className="message-timestamp">{formatTimestamp(message.timestamp)}</span>
       </div>
     </div>
   );

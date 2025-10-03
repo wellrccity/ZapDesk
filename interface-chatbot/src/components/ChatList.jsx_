@@ -1,7 +1,7 @@
 // src/components/ChatList.jsx
 import React from 'react';
 import { ListGroup, Form, InputGroup, Button, Badge } from 'react-bootstrap';
-import { PersonCircle, PlusCircle } from 'react-bootstrap-icons';
+import { PersonCircle, Dot, PlusCircle } from 'react-bootstrap-icons';
 
 function ChatList({
   chats,
@@ -9,44 +9,27 @@ function ChatList({
   onSelectChat,
   onAssumeChat,
   currentUser,
-  filterStatus = 'aguardando',
+  filterStatus,
   onFilterChange,
-  onNewChat,
+  onNewChat, // Nova prop
   onReopenChat
 }) {
 
   const getStatusBadge = (chat) => {
+    if (chat.inFlow) {
+      return <Badge bg="info" pill>Bot</Badge>;
+    }
+    if (chat.status === 'open' && !chat.assigned_to) {
+      return <Badge bg="warning" pill>Aguardando</Badge>;
+    }
     if (chat.status === 'closed') {
       return <Badge bg="secondary" pill>Fechado</Badge>;
     }
-    if (chat.status === 'open') {
-      return <Badge bg="warning" pill>Aguardando</Badge>;
-    }
-    if (chat.status === 'autoatendimento') {
-      return <Badge bg="info" pill>Bot</Badge>;
-    }
-    if (chat.assigned_to && chat.status !== 'closed') {
+    if (chat.assigned_to) {
       return <Badge bg="success" pill>Em Atendimento</Badge>;
     }
     return null;
   };
-
-  // 🔥 Aplica o filtro selecionado com correções
-  const filteredChats = chats.filter(chat => {
-    if (filterStatus === 'aguardando') {
-      return (chat.status === 'open' || chat.inFlow) && !chat.assigned_to && chat.status !== 'closed';
-    }
-    if (filterStatus === 'bot') {
-      return chat.status === 'autoatendimento';
-    }
-    if (filterStatus === 'emAtendimento') {
-      return !!chat.assigned_to && chat.status !== 'closed';
-    }
-    if (filterStatus === 'closed') {
-      return chat.status === 'closed';
-    }
-    return true; // fallback
-  });
 
   return (
     <div className="d-flex flex-column h-100">
@@ -54,9 +37,7 @@ function ChatList({
         <h5 className="mb-3">Atendimentos</h5>
         <InputGroup className="mb-2">
           <Form.Select value={filterStatus} onChange={(e) => onFilterChange(e.target.value)}>
-            <option value="aguardando">Aguardando</option>
-            <option value="bot">Bot</option>
-            <option value="emAtendimento">Em Atendimento</option>
+            <option value="open">Abertos</option>
             <option value="closed">Fechados</option>
           </Form.Select>
           <Button variant="outline-primary" onClick={onNewChat} title="Iniciar novo chat">
@@ -64,9 +45,8 @@ function ChatList({
           </Button>
         </InputGroup>
       </div>
-
       <ListGroup variant="flush" className="flex-grow-1" style={{ overflowY: 'auto' }}>
-        {filteredChats.map(chat => (
+        {chats.map(chat => (
           <ListGroup.Item
             key={chat.id}
             active={chat.id === activeChatId}
@@ -76,6 +56,7 @@ function ChatList({
             <div className="d-flex flex-grow-1" onClick={() => onSelectChat(chat)}>
               <PersonCircle size={40} className="me-3 text-secondary" />
               <div className="flex-grow-1 me-2">
+                {/* CORREÇÃO: Usa o nome do chat se existir, senão mostra o número sem o sufixo @c.us */}
                 <div className="fw-bold">{chat.name || chat.whatsapp_number.split('@')[0]}</div>
                 <small className="text-muted d-block text-truncate" style={{ maxWidth: '180px' }}>
                   {chat.messages?.[0]?.body || 'Nenhuma mensagem ainda...'}
@@ -85,36 +66,18 @@ function ChatList({
                 </div>
               </div>
             </div>
-
-            {/* 🔥 Botões conforme status */}
-            {chat.status === 'open' && !chat.assigned_to && (
-              <Button
-                size="sm"
-                variant="success"
-                onClick={(e) => { e.stopPropagation(); onAssumeChat(chat.id); }}
-              >
-                Assumir
-              </Button>
-            )}
-            {chat.status === 'autoatendimento' && (
-              <Button
-                size="sm"
-                variant="success"
-                onClick={(e) => { e.stopPropagation(); onAssumeChat(chat.id); }}
-              >
+            
+            {(chat.status === 'open' || chat.inFlow) && !chat.assigned_to && (
+              <Button size="sm" variant="success" onClick={(e) => { e.stopPropagation(); onAssumeChat(chat.id); }}>
                 Assumir
               </Button>
             )}
             {chat.status === 'closed' && (
-              <Button
-                size="sm"
-                variant="info"
-                onClick={(e) => { e.stopPropagation(); onReopenChat(chat.id); }}
-              >
+              <Button size="sm" variant="info" onClick={(e) => { e.stopPropagation(); onReopenChat(chat.id); }}>
                 Reabrir
               </Button>
             )}
-            {chat.assigned_to && chat.status !== 'closed' && (
+            {chat.assigned_to && (
               <div className="text-end">
                 <small className="text-muted d-block">
                   {chat.assignee?.id === currentUser.id ? 'Você' : chat.assignee?.name.split(' ')[0]}
@@ -123,7 +86,7 @@ function ChatList({
             )}
           </ListGroup.Item>
         ))}
-        {filteredChats.length === 0 && (
+        {chats.length === 0 && (
           <ListGroup.Item className="text-center text-muted">
             Nenhum chat encontrado.
           </ListGroup.Item>
@@ -134,4 +97,3 @@ function ChatList({
 }
 
 export default ChatList;
-

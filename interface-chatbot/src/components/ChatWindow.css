@@ -2,18 +2,62 @@
   height: 100%;
   display: flex;
   flex-direction: column;
+  min-height: 0; /* Adicionado para garantir que o flexbox funcione corretamente */
 }
 
 .chat-window-header {
+  flex-shrink: 0; /* Impede que o cabeçalho encolha */
   background: #f8f9fa;
 }
 
 .messages-area {
-  flex: 1;
-  overflow-y: auto;
-  background: #fff;
+  flex-grow: 1; /* Faz a área de mensagens ocupar todo o espaço vertical restante */
+  overflow-y: auto !important;
+  width: 100%;
+  height: 200px;
+  background: #e5ddd5; /* Fundo estilo WhatsApp */
+  padding: 1rem;
 }
 
 .chat-input-area {
+  flex-shrink: 0; /* Impede que a área de input encolha */
   background: #f8f9fa;
+  padding: 1rem;
+  border-top: 1px solid #dee2e6;
+}
+
+.message-bubble {
+  max-width: 75%;
+  padding: 10px 15px;
+  border-radius: 18px;
+  margin-bottom: 10px;
+  line-height: 1.4;
+  word-wrap: break-word;
+  position: relative;
+}
+
+.message-bubble.from-me {
+  background-color: #dcf8c6; /* Verde claro, estilo WhatsApp */
+  align-self: flex-end;
+  border-bottom-right-radius: 4px;
+}
+
+.message-bubble.from-them {
+  background-color: #ffffff; /* Branco */
+  align-self: flex-start;
+  border-bottom-left-radius: 4px;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.05);
+}
+
+.message-timestamp {
+  font-size: 0.75rem;
+  color: #999;
+  margin-top: 5px;
+  text-align: right;
+  display: block;
+}
+
+.message-text {
+  margin: 0; /* Remove margens padrão de parágrafos */
+  padding: 0;
 }

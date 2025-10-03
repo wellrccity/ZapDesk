@@ -26,6 +26,7 @@ const io = new Server(server, {
 });
 let userSockets = {};
 let userConversationStates = {};
+let agentChatStates = {}; // Mapeia o atendente (agentNumber) ao cliente (customerNumber)
 
 // --- 4. Configuração dos Middlewares do Express ---
 const corsOptions = {
@@ -68,14 +69,17 @@ const addUserConversationStates = (req, res, next) => {
   next();
 };
 
+// CORREÇÃO: Aplica o middleware globalmente para que todas as rotas tenham acesso.
+app.use(addUserConversationStates);
+
 // --- 7. Definição das Rotas da API ---
 app.get("/", (req, res) => res.send("Servidor do Chatbot no ar!"));
 require('./routes/auth.routes')(app);
 require('./routes/command.routes')(app);
 require('./routes/user.routes')(app);
-require('./routes/chat.routes')(app, client, addUserConversationStates); // Passa o middleware
+require('./routes/chat.routes')(app, client); // REMOÇÃO: Não precisa mais passar o middleware aqui.
 require('./routes/flow.routes')(app);
-// require('./routes/contact.routes')(app); // Mantenha comentado se não implementado
+require('./routes/contact.routes')(app);
 
 // --- 8. Setup do Banco de Dados ---
 db.sequelize.sync().then(() => {
@@ -230,8 +234,16 @@ async function processFlowStep(stepId, userNumber) {
         if (step.message_body) {
             await client.sendMessage(userNumber, finalMessage); // Envia uma mensagem final, se houver
         }
-        console.log(`Fluxo finalizado para o usuário ${userNumber}.`);
+        console.log(`Fluxo finalizado para o usuário ${userNumber} através da etapa END_FLOW.`);
+        // CORREÇÃO: Ao finalizar o fluxo com a etapa END_FLOW, o chat deve ser marcado como 'closed'.
+        const chat = await db.chats.findOne({ where: { whatsapp_number: userNumber } });
+        if (chat && chat.status === 'autoatendimento') {
+            chat.status = 'closed';
+            await chat.save();
+            io.emit('chat_updated', chat.toJSON());
+        }
         delete userConversationStates[userNumber]; // Remove o usuário do estado de conversa
+        return; // Adiciona um return para garantir que o processamento pare aqui.
     }
     // NOVO TIPO DE ETAPA: SOLICITAR ATENDIMENTO HUMANO
     else if (step.step_type === 'REQUEST_HUMAN_SUPPORT') {
@@ -266,6 +278,19 @@ async function processFlowStep(stepId, userNumber) {
     if (step.step_type === 'MESSAGE' && step.next_step_id) {
         // Adiciona um pequeno delay para que as mensagens não cheguem juntas
         setTimeout(() => processFlowStep(step.next_step_id, userNumber), 500);
+    } else if (step.step_type === 'MESSAGE' && !step.next_step_id) {
+        // ATUALIZAÇÃO: Se for uma mensagem final, encerra o fluxo imediatamente.
+        console.log(`Fluxo finalizado para o usuário ${userNumber} após a etapa final MESSAGE.`);
+        const chat = await db.chats.findOne({ where: { whatsapp_number: userNumber } });
+        if (chat && chat.status === 'autoatendimento') {
+            chat.status = 'closed';
+            await chat.save();
+            // Notifica a interface que o chat foi fechado.
+            const updatedChat = await db.chats.findByPk(chat.id, { include: [{ model: db.users, as: 'assignee', attributes: ['id', 'name'] }] });
+            io.emit('chat_updated', updatedChat.toJSON());
+        }
+        delete userConversationStates[userNumber]; // Remove o usuário do estado de conversa
+        return; // Garante que o processamento pare aqui.
     }
 }
 
@@ -318,6 +343,13 @@ client.on('message', async (message) => {
         io.emit('nova_mensagem', savedMessage.toJSON());
 
         const currentStep = await db.flow_steps.findByPk(userState.currentStepId, { include: [{ model: db.poll_options, as: 'poll_options' }] });
+        // --- INÍCIO DO BLOCO DE DEPURAÇÃO ---
+        console.log('\n--- INÍCIO DA DEPURAÇÃO DE ETAPA DE FLUXO ---');
+        console.log(`[DEBUG] Usuário: ${userNumber}`);
+        console.log(`[DEBUG] Mensagem recebida: "${message.body}"`);
+        console.log('[DEBUG] Estado atual da conversa (userState):', JSON.stringify(userState, null, 2));
+        console.log('[DEBUG] Etapa atual do fluxo (currentStep):', currentStep ? currentStep.toJSON() : 'NÃO ENCONTRADA');
+        // --- FIM DO BLOCO DE DEPURAÇÃO ---
         let nextStepId = null;
 
         if (!currentStep) {
@@ -326,7 +358,11 @@ client.on('message', async (message) => {
         }
 
         if (currentStep.step_type === 'QUESTION_TEXT') {
-            userState.formData[currentStep.form_field_key] = message.body;
+            // CORREÇÃO: Se a chave do formulário não for definida na etapa,
+            // usa 'userinput' como padrão. Isso garante que a resposta do usuário
+            // seja sempre acessível via :userinput na query SQL.
+            const formKey = currentStep.form_field_key || 'userinput';
+            userState.formData[formKey] = message.body;
 
             // CORREÇÃO: A decisão do próximo passo é feita *dentro* da lógica do DB.
             // NOVA LÓGICA: Consulta ao banco de dados
@@ -334,10 +370,20 @@ client.on('message', async (message) => {
                 const externalDb = new Sequelize(currentStep.db_name, currentStep.db_user, currentStep.db_pass, {
                     host: currentStep.db_host, port: currentStep.db_port, dialect: currentStep.db_dialect || 'mysql', logging: false
                 });
+                // CORREÇÃO: A chave deve ser 'userinput' (minúscula) para corresponder ao placeholder :userinput
+                // que os usuários são instruídos a usar na interface.
+                // MELHORIA: Adiciona múltiplas variações do placeholder para robustez.
+                // Isso previne erros se o admin digitar :userInput, :UserInput, ou mesmo o typo :userinpunt.
+                const queryReplacements = { 
+                    ...userState.formData, 
+                    userinput: message.body, // O padrão correto
+                    userInput: message.body, // Variação comum
+                };
+
                 try {
                     // CORREÇÃO: 'results' agora é o array de resultados.
                     const results = await externalDb.query(currentStep.db_query, {
-                        replacements: { userinput: message.body }, // CORREÇÃO: Chave em minúsculo para corresponder ao erro.
+                        replacements: queryReplacements, // CORREÇÃO: Usa o objeto de substituições completo.
                         type: Sequelize.QueryTypes.SELECT
                     });
 
@@ -362,8 +408,9 @@ client.on('message', async (message) => {
                     }
                 } catch (error) {
                     console.error("Erro ao consultar banco de dados externo na etapa QUESTION_TEXT:", error.message);
-                    // Opcional: definir um passo de erro
-                    // nextStepId = currentStep.next_step_id_on_error;
+                    // CORREÇÃO: Se a consulta falhar (por sintaxe, conexão, etc.),
+                    // o fluxo deve seguir para a etapa de falha, se definida.
+                    nextStepId = currentStep.next_step_id_on_fail || null;
                 } finally {
                     await externalDb.close();
                 }
@@ -386,18 +433,203 @@ client.on('message', async (message) => {
             }
         }
         
+        // --- INÍCIO DO BLOCO DE DEPURAÇÃO ---
+        console.log(`[DEBUG] ID da próxima etapa calculado: ${nextStepId} (Tipo: ${typeof nextStepId})`);
+        // --- FIM DO BLOCO DE DEPURAÇÃO ---
+
         if (nextStepId) {
+            console.log(`[DEBUG] DECISÃO: Avançando para a próxima etapa (ID: ${nextStepId}).`);
             // Chama a próxima etapa diretamente para garantir que os dados atualizados sejam usados.
             await processFlowStep(nextStepId, userNumber);
         } else {
-            // Se não houver um próximo passo, encerra a conversa
+            // Se não houver um próximo passo definido (nextStepId é nulo), o fluxo chegou ao fim.
+            console.log(`[DEBUG] DECISÃO: Finalizando o fluxo para ${userNumber} pois não há uma próxima etapa definida (nextStepId é nulo ou indefinido).`);
+            // CORREÇÃO: Ao finalizar o fluxo, o chat deve ser marcado como 'closed'.
+            // Ele só deve ir para 'open' se uma etapa específica (REQUEST_HUMAN_SUPPORT) for acionada.
+            const chat = await db.chats.findOne({ where: { whatsapp_number: userNumber } });
+            if (chat && chat.status === 'autoatendimento') {
+                chat.status = 'closed';
+                await chat.save();
+                io.emit('chat_updated', chat.toJSON());
+            }
             delete userConversationStates[userNumber];
         }
+        console.log('--- FIM DA DEPURAÇÃO DE ETAPA DE FLUXO ---\n');
     } else {
         // CORREÇÃO: A lógica de verificação de gatilho e atendimento humano foi movida para uma função separada.
-        await handleIncomingMessage(message, userNumber);
+        // NOVA LÓGICA: Verifica se a mensagem vem de um admin/atendente registrado.
+        const fromNumber = userNumber.replace('@c.us', '');
+        let internalUser = await db.users.findOne({ where: { whatsapp_number: fromNumber } });
+
+        // CORREÇÃO: Se não encontrou, tenta buscar sem o DDI 55, caso o número
+        // tenha sido cadastrado incorretamente.
+        if (!internalUser && fromNumber.startsWith('55')) {
+            const numberWithoutDDI = fromNumber.substring(2);
+            console.log(`Usuário não encontrado com ${fromNumber}. Tentando busca alternativa com ${numberWithoutDDI}...`);
+            internalUser = await db.users.findOne({ where: { whatsapp_number: numberWithoutDDI } });
+        }
+
+        if (internalUser) {
+            console.log(`Mensagem recebida de um usuário interno: ${internalUser.name} (${internalUser.role})`);
+            // Garante que o número no banco seja corrigido para o formato completo para futuras buscas.
+            if (internalUser.whatsapp_number !== fromNumber) await internalUser.update({ whatsapp_number: fromNumber });
+            await handleInternalUserMessage(message, internalUser);
+        } else {
+            await handleCustomerMessage(message, userNumber);
+        }
     }
 });
+
+/**
+ * Processa uma nova mensagem de um usuário interno (admin/atendente).
+ * @param {object} message O objeto da mensagem do whatsapp-web.js
+ * @param {object} internalUser O objeto do usuário do Sequelize.
+ */
+async function handleInternalUserMessage(message, internalUser) {
+    // --- CORREÇÃO CRÍTICA ---
+    // A mensagem do usuário interno (atendente/admin) também precisa ser
+    // registrada no banco de dados para que a lógica de chat existente funcione.
+    // Sem isso, o sistema não consegue associar a conversa a um chat.
+    try {
+        const [chat] = await db.chats.findOrCreate({
+            where: { whatsapp_number: message.from },
+            defaults: { name: internalUser.name, status: 'closed' } // Inicia como 'closed' se não existir
+        });
+        await db.messages.create({
+            chat_id: chat.id,
+            body: message.body,
+            timestamp: message.timestamp,
+            from_me: false, // A mensagem vem do WhatsApp do atendente para o bot
+            media_type: message.type
+        });
+    } catch (e) {
+        console.error("Erro ao salvar mensagem do usuário interno:", e);
+    }
+    // --- FIM DA CORREÇÃO ---
+
+    const userNumber = message.from;
+    const messageBody = message.body.trim();
+    const triggerKeyword = messageBody.toLowerCase();
+    const userRole = internalUser.role === 'admin' ? ['admin', 'agent'] : ['agent']; // Admin pode acionar fluxos de agente também
+
+    // --- LÓGICA DE MODO CONVERSA E COMANDOS ---
+    const activeConversation = agentChatStates[userNumber];
+
+    if (activeConversation) {
+        // O atendente está em uma conversa ativa.
+        if (messageBody.startsWith('!')) {
+            // É um comando, não uma mensagem para o cliente.
+            const [command, ...args] = messageBody.split(' ');
+            
+            if (command.toLowerCase() === '!fechar') {
+                const chat = await db.chats.findOne({ where: { whatsapp_number: activeConversation.customerNumber } });
+                if (chat) {
+                    const attendantName = internalUser.name;
+                    const goodbyeMessage = `Seu atendimento foi finalizado por ${attendantName}. Agradecemos o seu contato! 😊`;
+                    await client.sendMessage(chat.whatsapp_number, goodbyeMessage);
+                    
+                    await db.messages.create({ chat_id: chat.id, body: goodbyeMessage, timestamp: Math.floor(Date.now() / 1000), from_me: true });
+                    
+                    chat.status = 'closed';
+                    chat.assigned_to = null;
+                    await chat.save();
+                    
+                    io.emit('chat_updated', chat.toJSON());
+                    await client.sendMessage(userNumber, `✅ Atendimento com ${chat.name || chat.whatsapp_number} foi finalizado.`);
+                    delete agentChatStates[userNumber]; // Sai do modo conversa
+                }
+                return; // Comando executado
+            } 
+            else if (command.toLowerCase() === '!sair') {
+                delete agentChatStates[userNumber];
+                await client.sendMessage(userNumber, "Você saiu do modo conversa. Agora você pode usar os comandos de fluxo novamente.");
+                return; // Comando executado
+            }
+        }
+
+        // Se não for um comando, é uma mensagem para o cliente.
+        const formattedMessage = `*${internalUser.name} diz:*\n\n${messageBody}`;
+        await client.sendMessage(activeConversation.customerNumber, formattedMessage);
+
+        // Salva a mensagem no banco de dados como se fosse da interface
+        const chat = await db.chats.findOne({ where: { whatsapp_number: activeConversation.customerNumber } });
+        if (chat) {
+            const savedMessage = await db.messages.create({
+                chat_id: chat.id, body: messageBody, timestamp: message.timestamp, from_me: true, media_type: 'chat'
+            });
+            io.emit('nova_mensagem', savedMessage.toJSON()); // Notifica a interface
+        }
+        return; // Mensagem encaminhada
+    }
+
+    // --- LÓGICA DE COMANDOS FORA DO MODO CONVERSA ---
+    if (messageBody.startsWith('!assumir')) {
+        const chatId = messageBody.split(' ')[1];
+        if (!chatId || isNaN(chatId)) {
+            await client.sendMessage(userNumber, "⚠️ Comando inválido. Use: `!assumir [ID do chat]`");
+            return;
+        }
+
+        const chat = await db.chats.findByPk(chatId);
+        if (!chat) {
+            await client.sendMessage(userNumber, `❌ Chat com ID ${chatId} não encontrado.`);
+            return;
+        }
+        if (chat.status !== 'open') {
+            await client.sendMessage(userNumber, `⚠️ O chat com ${chat.name} não está aberto para ser assumido.`);
+            return;
+        }
+
+        // Atribui o chat
+        chat.assigned_to = internalUser.id;
+        await chat.save();
+
+        // Entra no modo conversa
+        agentChatStates[userNumber] = { customerNumber: chat.whatsapp_number };
+
+        // Envia mensagem de boas-vindas para o cliente e para o atendente
+        const welcomeMessage = `Olá! Meu nome é ${internalUser.name} e darei continuidade ao seu atendimento. 👋`;
+        await client.sendMessage(chat.whatsapp_number, welcomeMessage);
+        await db.messages.create({ chat_id: chat.id, body: welcomeMessage, timestamp: Math.floor(Date.now() / 1000), from_me: true });
+
+        await client.sendMessage(userNumber, `✅ Você assumiu o atendimento de *${chat.name || chat.whatsapp_number}*.`
+            + `\n\nAgora você está em *modo conversa*. Tudo que você digitar aqui será enviado para o cliente.`
+            + `\n\nPara finalizar, digite \`!fechar\`.\nPara sair do modo conversa sem fechar, digite \`!sair\`.`);
+
+        // Notifica a interface
+        const updatedChat = await db.chats.findByPk(chatId, { include: [{ model: db.users, as: 'assignee', attributes: ['id', 'name'] }] });
+        io.emit('chat_updated', updatedChat.toJSON());
+        return; // Comando executado
+    }
+
+
+    // --- LÓGICA DE FLUXOS (se nenhum comando ou modo conversa foi ativado) ---
+    const flow = await db.flows.findOne({
+        where: {
+            trigger_keyword: triggerKeyword,
+            target_audience: userRole
+        }
+    });
+
+    if (flow && flow.initial_step_id) {
+        console.log(`Iniciando fluxo interno '${flow.name}' para ${internalUser.name}.`);
+        userConversationStates[userNumber] = {
+            flowId: flow.id,
+            currentStepId: flow.initial_step_id,
+            formData: {
+                // Podemos pré-popular dados do usuário se necessário
+                userName: internalUser.name,
+                userEmail: internalUser.email,
+                userId: internalUser.id
+            }
+        };
+        await processFlowStep(flow.initial_step_id, userNumber);
+    } else {
+        // Se nenhum fluxo for encontrado, pode enviar uma mensagem de ajuda
+        console.log(`Nenhum fluxo interno encontrado para o gatilho '${triggerKeyword}' e role '${internalUser.role}'.`);
+        await client.sendMessage(userNumber, "Comando não reconhecido. Digite '!ajuda' para ver as opções disponíveis.");
+    }
+}
 
 /**
  * Processa uma nova mensagem que não faz parte de um fluxo ativo.
@@ -405,7 +637,7 @@ client.on('message', async (message) => {
  * @param {object} message O objeto da mensagem do whatsapp-web.js
  * @param {string} userNumber O número do remetente.
  */
-async function handleIncomingMessage(message, userNumber) {
+async function handleCustomerMessage(message, userNumber) {
     // CORREÇÃO: Verifica se já existe um chat para este número.
     const existingChat = await db.chats.findOne({ where: { whatsapp_number: userNumber } });
 
@@ -425,19 +657,30 @@ async function handleIncomingMessage(message, userNumber) {
     const triggerKeyword = message.body.trim().toLowerCase();
     console.log(`2. Palavra-chave tratada (trim + minúsculo): "${triggerKeyword}"`);
     
-    // 1. Tenta encontrar um fluxo com a palavra-chave exata.
-    let flow = await db.flows.findOne({ where: { trigger_keyword: triggerKeyword } });
+    // 1. Tenta encontrar um fluxo de CLIENTE com a palavra-chave exata.
+    let flow = await db.flows.findOne({ where: { trigger_keyword: triggerKeyword, target_audience: 'customer' } });
     
-    // 2. Se não encontrar, procura por um fluxo "padrão" (catch-all).
+    // 2. Se não encontrar, procura por um fluxo "padrão" (catch-all) de CLIENTE.
     if (!flow) {
         console.log("3. Nenhum fluxo com gatilho exato. Procurando por fluxo padrão...");
-        flow = await db.flows.findOne({ where: { trigger_keyword: '*' } });
+        flow = await db.flows.findOne({ where: { trigger_keyword: '*', target_audience: 'customer' } });
     }
     
     console.log("3. Resultado da busca por fluxo no DB:", flow ? flow.toJSON() : "Nenhum fluxo encontrado (nem exato, nem padrão).");
     
     if (flow && flow.initial_step_id) {
         console.log("4. CONCLUSÃO: Gatilho correspondente encontrado! O bot deveria iniciar o fluxo.");
+        // CORREÇÃO CRÍTICA: Salva a mensagem que disparou o fluxo no banco de dados.
+        // Isso garante que a primeira mensagem do usuário apareça no histórico do chat.
+        const [chatForLog] = await db.chats.findOrCreate({ where: { whatsapp_number: userNumber }, defaults: { status: 'autoatendimento' } });
+        const savedMessage = await db.messages.create({
+            chat_id: chatForLog.id,
+            body: message.body,
+            timestamp: message.timestamp,
+            from_me: false,
+            media_type: message.type
+        });
+        io.emit('nova_mensagem', savedMessage.toJSON());
         // CORREÇÃO: Cria ou atualiza o chat para 'autoatendimento' no momento em que o fluxo é iniciado.
         const [chat] = await db.chats.findOrCreate({ where: { whatsapp_number: userNumber }, defaults: { status: 'autoatendimento' } });
         if (chat.status !== 'autoatendimento') {
@@ -458,10 +701,17 @@ async function handleIncomingMessage(message, userNumber) {
         } else {
             console.log("4. CONCLUSÃO: Nenhum gatilho correspondente. Mensagem será tratada como atendimento humano.");
         }
-        // Cria um novo chat para atendimento humano, já que nenhum fluxo foi disparado.
-        // CORREÇÃO: O chat já começa como 'open' (aguardando)
-        const [newChat] = await db.chats.findOrCreate({ where: { whatsapp_number: userNumber }, defaults: { status: 'open' } });
-        await processHumanChatMessage(message, newChat);
+        // CORREÇÃO: Se nenhum fluxo foi disparado (nem por palavra-chave, nem o padrão),
+        // a mensagem deve ser apenas salva no chat, que deve ser criado (ou encontrado)
+        // com o status 'autoatendimento'. O status só deve mudar para 'open'
+        // quando um atendente for solicitado ou assumir.
+        const [chat] = await db.chats.findOrCreate({
+            where: { whatsapp_number: userNumber },
+            defaults: { status: 'autoatendimento' }
+        });
+
+        // A função processHumanChatMessage já salva a mensagem e atualiza os dados do chat.
+        await processHumanChatMessage(message, chat);
     }
     console.log("--- FIM DA VERIFICAÇÃO DE GATILHO ---\n");
 }
@@ -481,8 +731,11 @@ async function processHumanChatMessage(message, chat) {
         chat.name = contact.name || contact.pushname || chatInfo.name;
         chat.profile_pic_url = profilePicUrl;
         // CORREÇÃO: Se o chat estava fechado, reabre e notifica a interface.
-        if (chat.status === 'closed') {
-            chat.status = 'open';
+        // O status deve voltar para 'autoatendimento' para que o bot possa agir na próxima mensagem.
+        // Se o status for 'open', significa que o bot já terminou e a mensagem é para um atendente (ou para iniciar novo fluxo).
+        // Não devemos alterar o status 'open' aqui.
+        if (chat.status === 'closed' || chat.status === 'open') {
+            chat.status = 'autoatendimento';
             await chat.save();
             io.emit('chat_updated', chat.toJSON()); // Emite o evento para a UI atualizar o status.
         }

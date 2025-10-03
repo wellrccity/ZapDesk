@@ -25,14 +25,16 @@ function ChatWindow({ chat, messages, isLoading, currentUser, onSendMessage, onS
   };
 
   const canTransfer = isAdmin;
+  // CORREÇÃO: Permite interação apenas se o chat estiver atribuído ao usuário atual.
   const canInteract = chat?.assignee?.id === currentUser?.id;
 
   return (
-    <div className="chat-window d-flex flex-column h-100">
+    <div className="chat-window d-flex flex-column">
       {/* Cabeçalho */}
       <div className="chat-window-header d-flex justify-content-between align-items-center p-2 border-bottom">
         <div>
-          <h5>Conversa com: {chat.whatsapp_number.split('@')[0]}</h5>
+          {/* CORREÇÃO: Usa o nome do chat se existir, senão mostra o número. */}
+          <h5>Conversa com: {chat.name || chat.whatsapp_number.split('@')[0]}</h5>
           {chat?.assignee && (
             <span className="text-muted">
               Atendido por: <strong>{chat.assignee.id === currentUser?.id ? 'Você' : chat.assignee.name}</strong>

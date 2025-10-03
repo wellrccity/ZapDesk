@@ -2,6 +2,8 @@
 
 const db = require("../models");
 const Chat = db.chats;
+const Contact = db.contacts;
+const { Op } = require("sequelize"); // Importa o operador 'Op' do Sequelize
 const Message = db.messages;
 const User = db.users;
 
@@ -11,8 +13,11 @@ exports.findAll = async (req, res) => {
   const { status } = req.query;
   let whereClause = {};
 
-  if (status && (status === 'open' || status === 'closed')) {
-    whereClause.status = status;
+  if (status === 'closed') {
+    whereClause.status = 'closed';
+  } else if (status === 'open') {
+    // CORREÇÃO: Inclui chats em 'autoatendimento' na lista de abertos.
+    whereClause.status = { [Op.or]: ['open', 'autoatendimento'] };
   }
 
   try {
@@ -25,14 +30,31 @@ exports.findAll = async (req, res) => {
       order: [['updatedAt', 'DESC']]
     });
 
-    // Adiciona o status 'inFlow' a cada chat
-    const chatsWithFlowStatus = chats.map(chat => {
-        const chatJson = chat.toJSON();
+    // Busca todos os contatos para mapear nomes.
+    const contacts = await Contact.findAll({ attributes: ['whatsapp_number', 'name'] });
+    const contactMap = new Map(contacts.map(c => [c.whatsapp_number, c.name]));
+
+    // Adiciona o status 'inFlow' e o nome do contato (se existir) a cada chat.
+    const chatsWithDetails = chats.map(chat => {
+      const chatJson = chat.toJSON();
+      
+      // CORREÇÃO: Verifica se o chat tem um whatsapp_number antes de tentar usá-lo.
+      if (chat && chat.whatsapp_number) {
+        const contactName = contactMap.get(chat.whatsapp_number.split('@')[0]);
+        if (contactName) {
+          chatJson.name = contactName; // Usa o nome do contato salvo.
+        }
+        // Adiciona o status 'inFlow' apenas se houver um número de whatsapp
         chatJson.inFlow = !!(userConversationStates && userConversationStates[chat.whatsapp_number]);
-        return chatJson;
+      }
+
+      return chatJson;
     });
-    res.send(chatsWithFlowStatus);
+
+    res.send(chatsWithDetails);
   } catch (error) {
+    // DEBUG: Imprime o erro completo no console do servidor para depuração.
+    console.error("Falha detalhada ao buscar chats:", error);
     res.status(500).send({ message: "Erro ao buscar chats: " + error.message });
   }
 };
@@ -51,6 +73,10 @@ exports.assign = async (req, res) => {
 
     const originalAssigneeId = chat.assigned_to;
     chat.assigned_to = userId;
+    // GARANTE QUE O CHAT FIQUE COM O STATUS 'OPEN' AO SER ASSUMIDO
+    if (chat.status !== 'open') {
+      chat.status = 'open';
+    }
     await chat.save();
 
     const welcomeMessage = `Olá! Meu nome é ${attendant.name} e darei continuidade ao seu atendimento. 👋`;

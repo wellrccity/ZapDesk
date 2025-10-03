@@ -20,11 +20,22 @@ html, body, #root {
 
 }
 
-/* 3. Layout da Página de Chat */
+/* 3. Layout da Página de Chat (Wrapper) - Garante que o container ocupe a altura do seu pai (.main-content) */
+.chat-page-wrapper {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 4. Layout da Página de Chat (Container) */
 .chat-page-container {
-  height: 100%; /* Ocupa 100% da altura do .main-content */
+  flex-grow: 1; /* Faz a linha do chat ocupar o espaço restante */
   width: 100%;
   display: flex;
+  min-height: 0; /* Permite que os filhos rolem corretamente */
+  border: 1px solid #dee2e6;
+  border-radius: 0.5rem;
+  overflow: hidden;
 }
 
 /* 4. Layout da Janela de Chat e Área de Mensagens */
