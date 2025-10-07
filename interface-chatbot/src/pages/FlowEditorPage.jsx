@@ -5,15 +5,19 @@ import { Container, Card, Button, Spinner } from 'react-bootstrap';
 import api from '../services/api';
 import StepCard from '../components/StepCard';
 import StepEditorModal from '../components/StepEditorModal';
+import DatabaseConnectionsModal from '../components/DatabaseConnectionsModal'; // <-- ADICIONAR
 
 function FlowEditorPage() {
   const { flowId } = useParams();
   const navigate = useNavigate();
   const [flow, setFlow] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [dbCredentials, setDbCredentials] = useState([]); // <-- ADICIONAR
+  const [formKeys, setFormKeys] = useState([]); // <-- ADICIONAR
 
   // Estados para controlar o modal
   const [showStepModal, setShowStepModal] = useState(false);
+  const [showDbModal, setShowDbModal] = useState(false); // <-- ADICIONAR
   const [currentStep, setCurrentStep] = useState(null); // 'null' para nova etapa, objeto para editar
 
   useEffect(() => {
@@ -24,11 +28,30 @@ function FlowEditorPage() {
     setIsLoading(true);
     try {
       const response = await api.get(`/flows/${flowId}`);
+      fetchDbCredentials(); // Busca as credenciais após buscar o fluxo
       setFlow(response.data);
+      // Extrai todas as chaves de formulário das etapas e remove duplicatas/vazias
+      const keys = [
+        ...new Set(response.data.steps.map(s => s.form_field_key).filter(Boolean))
+      ];
+      // Adiciona a chave 'userinput' que é um padrão para respostas de texto
+      if (!keys.includes('userinput')) keys.push('userinput');
+      setFormKeys(keys.sort());
     } catch (err) {
       console.error("Falha ao buscar dados do fluxo", err);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Função para buscar as credenciais do fluxo atual
+  const fetchDbCredentials = async () => {
+    try {
+      const response = await api.get(`/flows/${flowId}/database-credentials`);
+      setDbCredentials(response.data);
+    } catch (error) {
+      console.error("Erro ao buscar credenciais de banco de dados", error);
+      // Não trava a UI, apenas loga o erro
     }
   };
 
@@ -85,9 +108,12 @@ function FlowEditorPage() {
           <Card.Header className="d-flex justify-content-between align-items-center">
             <div>
               <h4>Editando Fluxo: {flow.name}</h4>
+              <p className="text-muted mb-0">Palavra-chave: {flow.trigger_keyword}</p>
             </div>
-            <Button variant="danger" onClick={handleDeleteFlow}>Apagar Fluxo</Button>
-            <p className="text-muted mb-0">Palavra-chave: {flow.trigger_keyword}</p>
+            <div>
+              <Button variant="info" className="me-2" onClick={() => setShowDbModal(true)}>Gerenciar Conexões</Button>
+              <Button variant="danger" onClick={handleDeleteFlow}>Apagar Fluxo</Button>
+            </div>
           </Card.Header>
           <Card.Body>
             <h5>Etapas do Fluxo</h5>
@@ -110,7 +136,16 @@ function FlowEditorPage() {
         onHide={() => setShowStepModal(false)}
         onSave={handleSaveStep}
         currentStep={currentStep}
-        allSteps={flow.steps} // MUDANÇA: Passe a lista de todas as etapas para o modal
+        allSteps={flow.steps}
+        formKeys={formKeys} // <-- ADICIONAR
+        dbCredentials={dbCredentials} // <-- ADICIONAR
+      />
+
+      <DatabaseConnectionsModal
+        show={showDbModal}
+        onHide={() => setShowDbModal(false)}
+        flowId={flowId}
+        onUpdate={fetchDbCredentials} // <-- ADICIONAR: Atualiza a lista quando uma conexão é salva/apagada
       />
     </>
   );

@@ -1,10 +1,14 @@
 // src/components/StepEditorModal.jsx
 import React, { useState, useEffect } from 'react';
 import { Modal, Button, Form, Row, Col, InputGroup, Card } from 'react-bootstrap';
+import { toast } from 'react-toastify';
+import api from '../services/api';
 
-// Recebe a nova prop 'allSteps'
-function StepEditorModal({ show, onHide, onSave, currentStep, allSteps }) {
+// Recebe as novas props 'allSteps' e 'dbCredentials'
+function StepEditorModal({ show, onHide, onSave, currentStep, allSteps, dbCredentials, formKeys }) {
   const [stepData, setStepData] = useState({});
+  const [tableColumns, setTableColumns] = useState([]);
+  const [columnMapping, setColumnMapping] = useState({});
 
   useEffect(() => {
     if (currentStep) {
@@ -12,16 +16,57 @@ function StepEditorModal({ show, onHide, onSave, currentStep, allSteps }) {
           setStepData({
             ...currentStep,
             poll_options: currentStep.poll_options || [],
+            // Garante que o mapeamento seja um objeto ao carregar
+            db_column_mapping: currentStep.db_column_mapping ? JSON.parse(currentStep.db_column_mapping) : {}
           });
+      // Inicializa o estado do mapeamento local
+      setColumnMapping(currentStep.db_column_mapping ? JSON.parse(currentStep.db_column_mapping) : {});
     } else {
       setStepData({ step_type: 'MESSAGE', message_body: '', poll_options: [], next_step_id: null });
+      setColumnMapping({});
     }
-  }, [currentStep]);
+    // Limpa as colunas ao fechar/trocar de etapa
+    if (!show) {
+      setTableColumns([]);
+    }
+  }, [currentStep, show]);
+
+  // Busca as colunas da tabela quando a conexão ou o nome da tabela mudam
+  useEffect(() => {
+    const fetchTableColumns = async () => {
+      if (stepData.database_credential_id && stepData.db_table) {
+        try {
+          const response = await api.get(`/database-credentials/${stepData.database_credential_id}/tables/${stepData.db_table}/columns`);
+          setTableColumns(response.data);
+        } catch (error) {
+          setTableColumns([]); // Limpa em caso de erro (ex: tabela não encontrada)
+          const msg = error.response?.data?.message || 'Não foi possível buscar as colunas da tabela.';
+          toast.warn(msg);
+        }
+      } else {
+        setTableColumns([]); // Limpa se não houver conexão ou tabela
+      }
+    };
+
+    // Debounce para evitar chamadas excessivas enquanto o usuário digita
+    const handler = setTimeout(() => {
+      fetchTableColumns();
+    }, 500);
+
+    return () => clearTimeout(handler);
+  }, [stepData.database_credential_id, stepData.db_table]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     // Se o valor for a string "null", converte para o valor nulo real
     setStepData({ ...stepData, [name]: value === "null" ? null : value });
+  };
+
+  const handleMappingChange = (dbColumn, formKey) => {
+    setColumnMapping(prev => ({
+      ...prev,
+      [dbColumn]: formKey
+    }));
   };
 
   const handleOptionChange = (index, field, value) => {
@@ -41,7 +86,11 @@ function StepEditorModal({ show, onHide, onSave, currentStep, allSteps }) {
   };
 
   const handleSave = () => {
-    onSave(stepData);
+    // Salva o mapeamento como uma string JSON
+    onSave({
+      ...stepData,
+      db_column_mapping: JSON.stringify(columnMapping)
+    });
   };
 
   return (
@@ -171,65 +220,6 @@ function StepEditorModal({ show, onHide, onSave, currentStep, allSteps }) {
                   Em formato JSON. A "chave" é o nome que você usará no fluxo (ex: {`{nome_variavel}`}), e o "valor" é o nome da coluna retornada pela query.
                 </Form.Text>
               </Form.Group>
-
-              <p className="mt-3 mb-1 fw-bold">Credenciais do Banco</p>
-              {/* Campos de credenciais do banco de dados */}
-              <Row>
-                <Col md={6}>
-                  <Form.Group className="mb-3">
-                    <Form.Label>Dialeto do Banco</Form.Label>
-                    <Form.Select name="db_dialect" value={stepData.db_dialect || 'mysql'} onChange={handleChange}>
-                      <option value="mysql">MySQL</option>
-                    </Form.Select>
-                  </Form.Group>
-                </Col>
-                <Col md={6}>
-                   <Form.Group className="mb-3">
-                    <Form.Label>Nome do Banco de Dados</Form.Label>
-                    <Form.Control
-                      type="text"
-                      name="db_name"
-                      value={stepData.db_name || ''}
-                      onChange={handleChange}
-                      placeholder="ex: minha_empresa_db"
-                    />
-                  </Form.Group>
-                </Col>
-              </Row>
-              <Row>
-                <Col md={8}>
-                  <Form.Group className="mb-3">
-                    <Form.Label>Endereço (Host)</Form.Label>
-                    <Form.Control
-                      type="text"
-                      name="db_host"
-                      value={stepData.db_host || ''}
-                      onChange={handleChange}
-                      placeholder="ex: 127.0.0.1"
-                    />
-                  </Form.Group>
-                </Col>
-                <Col md={4}>
-                  <Form.Group className="mb-3">
-                    <Form.Label>Porta</Form.Label>
-                    <Form.Control type="number" name="db_port" value={stepData.db_port || ''} onChange={handleChange} />
-                  </Form.Group>
-                </Col>
-              </Row>
-              <Row>
-                <Col md={6}>
-                  <Form.Group className="mb-3">
-                    <Form.Label>Usuário</Form.Label>
-                    <Form.Control type="text" name="db_user" value={stepData.db_user || ''} onChange={handleChange} placeholder="ex: root" />
-                  </Form.Group>
-                </Col>
-                <Col md={6}>
-                  <Form.Group className="mb-3">
-                    <Form.Label>Senha</Form.Label>
-                    <Form.Control type="password" name="db_pass" value={stepData.db_pass || ''} onChange={handleChange} />
-                  </Form.Group>
-                </Col>
-              </Row>
             </Card>
           )}
 
@@ -237,72 +227,50 @@ function StepEditorModal({ show, onHide, onSave, currentStep, allSteps }) {
           {stepData.step_type === 'FORM_SUBMIT' && (
             <Card className="mb-3 p-3 bg-light border rounded">
               <Card.Title className="fw-bold">Integração com Banco de Dados</Card.Title>
+              <Form.Text className="d-block mb-3">Os dados coletados no formulário serão inseridos em uma tabela do banco de dados selecionado.</Form.Text>
               <Form.Group className="mb-3">
-                <Form.Label>Dialeto do Banco</Form.Label>
-                <Form.Select name="db_dialect" value={stepData.db_dialect || 'mysql'} onChange={handleChange}>
-                  <option value="mysql">MySQL</option>
-                  {/* Adicionar outros dialetos como 'postgres' aqui no futuro */}
+                <Form.Label>Conexão com Banco de Dados</Form.Label>
+                <Form.Select name="database_credential_id" value={stepData.database_credential_id || ''} onChange={handleChange}>
+                  <option value="">Selecione uma conexão...</option>
+                  {dbCredentials && dbCredentials.map(cred => (
+                    <option key={cred.id} value={cred.id}>{cred.name}</option>
+                  ))}
                 </Form.Select>
+                <Form.Text>As conexões são gerenciadas na tela de edição do fluxo.</Form.Text>
               </Form.Group>
               <Form.Group className="mb-3">
                 <Form.Label>Tabela de Destino</Form.Label>
-                <Form.Control
-                  type="text"
-                  name="db_table"
-                  value={stepData.db_table || ''}
-                  onChange={handleChange}
-                  placeholder="ex: leads_chatbot"
-                />
+                <Form.Control type="text" name="db_table" value={stepData.db_table || ''} onChange={handleChange} placeholder="ex: leads_chatbot" />
               </Form.Group>
-              <Row>
-                <Col md={8}>
-                  <Form.Group className="mb-3">
-                    <Form.Label>Endereço (Host)</Form.Label>
-                    <Form.Control
-                      type="text"
-                      name="db_host"
-                      value={stepData.db_host || ''}
-                      onChange={handleChange}
-                      placeholder="ex: 127.0.0.1"
-                    />
-                  </Form.Group>
-                </Col>
-                <Col md={4}>
-                  <Form.Group className="mb-3">
-                    <Form.Label>Porta</Form.Label>
-                    <Form.Control
-                      type="number"
-                      name="db_port"
-                      value={stepData.db_port || ''}
-                      onChange={handleChange}
-                    />
-                  </Form.Group>
-                </Col>
-              </Row>
-              <Row>
-                <Col md={6}>
-                  <Form.Group className="mb-3">
-                    <Form.Label>Nome do Banco de Dados</Form.Label>
-                    <Form.Control
-                      type="text"
-                      name="db_name"
-                      value={stepData.db_name || ''}
-                      onChange={handleChange}
-                      placeholder="ex: minha_empresa_db"
-                    />
-                  </Form.Group>
-                </Col>
-                <Col md={6}>
-                  <Form.Group className="mb-3">
-                    <Form.Label>Usuário</Form.Label>
-                    <Form.Control type="text" name="db_user" value={stepData.db_user || ''} onChange={handleChange} placeholder="ex: root" />
-                  </Form.Group>
-                </Col>
-              </Row>
-              <Form.Group className="mb-3">
-                <Form.Label>Senha</Form.Label>
-                <Form.Control type="password" name="db_pass" value={stepData.db_pass || ''} onChange={handleChange} />
-              </Form.Group>
+
+              {tableColumns.length > 0 && (
+                <Card className="p-3 mb-3 border-secondary">
+                  <Card.Title className="h6">Mapeamento de Colunas</Card.Title>
+                  <Form.Text className="d-block mb-2">
+                    Selecione qual campo do formulário corresponde a cada coluna do banco de dados.
+                    As chaves disponíveis são as que você definiu nas etapas de "Pergunta".
+                  </Form.Text>
+                  {tableColumns.map(col => (
+                    <Row key={col} className="mb-2 align-items-center">
+                      <Col md={5}>
+                        <Form.Label className="text-muted mb-0">{col}</Form.Label>
+                      </Col>
+                      <Col md={7}>
+                        <Form.Select
+                          value={columnMapping[col] || ''}
+                          onChange={(e) => handleMappingChange(col, e.target.value)}
+                        >
+                            <option value="">-- Ignorar esta coluna --</option>
+                            {formKeys.map(key => (
+                                <option key={key} value={key}>{key}</option>
+                            ))}
+                        </Form.Select>
+                      </Col>
+                    </Row>
+                  ))}
+                </Card>
+              )}
+
               <Form.Group className="mb-3">
                 <Form.Label>SQL Extra (Opcional)</Form.Label>
                 <Form.Control as="textarea" rows={4} name="extra_sql" value={stepData.extra_sql || ''} onChange={handleChange} placeholder="-- Use :chave para substituir valores do formulário&#10;-- Ex: UPDATE estatisticas SET total = total + 1 WHERE id = :id_produto;" />

@@ -80,6 +80,7 @@ require('./routes/user.routes')(app);
 require('./routes/chat.routes')(app, client); // REMOÇÃO: Não precisa mais passar o middleware aqui.
 require('./routes/flow.routes')(app);
 require('./routes/contact.routes')(app);
+require('./routes/database_credential.routes')(app); // <-- ADICIONAR
 
 // --- 8. Setup do Banco de Dados ---
 db.sequelize.sync().then(() => {
@@ -201,19 +202,39 @@ async function processFlowStep(stepId, userNumber) {
         }
 
         // Lógica de Banco de Dados (configurada na própria etapa)
-        if (step.db_name && step.db_table) {
-            const externalDb = new Sequelize(step.db_name, step.db_user, step.db_pass, {
-                host: step.db_host,
-                port: step.db_port,
-                dialect: step.db_dialect || 'mysql'
+        if (step.database_credential_id && step.db_table) {
+            const creds = await db.database_credentials.findByPk(step.database_credential_id);
+            if (!creds) {
+                console.error(`Credenciais de banco de dados com ID ${step.database_credential_id} não encontradas.`);
+                await client.sendMessage(userNumber, "Ocorreu um erro interno (DB Credential not found).");
+                delete userConversationStates[userNumber];
+                return;
+            }
+            const externalDb = new Sequelize(creds.db_name, creds.user, creds.pass, {
+                host: creds.host,
+                port: creds.port,
+                dialect: creds.dialect || 'mysql'
             });
 
             try {
                 await externalDb.authenticate();
                 console.log('Conexão com banco de dados externo bem-sucedida.');
 
-                await externalDb.queryInterface.bulkInsert(step.db_table, [userState.formData]);
-                console.log(`Dados inseridos na tabela ${step.db_table} com sucesso.`);
+                let dataToInsert = userState.formData;
+
+                // Se houver um mapeamento de colunas, transforma os dados
+                if (step.db_column_mapping) {
+                    const mapping = JSON.parse(step.db_column_mapping);
+                    const mappedData = {};
+                    for (const dbColumn in mapping) {
+                        const formKey = mapping[dbColumn];
+                        if (formKey && userState.formData[formKey] !== undefined) {
+                            mappedData[dbColumn] = userState.formData[formKey];
+                        }
+                    }
+                    dataToInsert = mappedData;
+                }
+                await externalDb.getQueryInterface().bulkInsert(step.db_table, [dataToInsert]);
 
                 if (step.extra_sql) {
                     await externalDb.query(step.extra_sql, { replacements: userState.formData });
@@ -366,10 +387,17 @@ client.on('message', async (message) => {
 
             // CORREÇÃO: A decisão do próximo passo é feita *dentro* da lógica do DB.
             // NOVA LÓGICA: Consulta ao banco de dados
-            if (currentStep.db_query && currentStep.db_name) {
-                const externalDb = new Sequelize(currentStep.db_name, currentStep.db_user, currentStep.db_pass, {
-                    host: currentStep.db_host, port: currentStep.db_port, dialect: currentStep.db_dialect || 'mysql', logging: false
+            if (currentStep.db_query && currentStep.database_credential_id) {
+                const creds = await db.database_credentials.findByPk(currentStep.database_credential_id);
+                if (!creds) {
+                    console.error(`Credenciais de banco de dados com ID ${currentStep.database_credential_id} não encontradas para a etapa QUESTION_TEXT.`);
+                    nextStepId = currentStep.next_step_id_on_fail || null; // Segue para a etapa de falha
+                } else {
+                    const externalDb = new Sequelize(creds.db_name, creds.user, creds.pass, {
+                    host: creds.host, port: creds.port, dialect: creds.dialect || 'mysql', logging: false
                 });
+
+
                 // CORREÇÃO: A chave deve ser 'userinput' (minúscula) para corresponder ao placeholder :userinput
                 // que os usuários são instruídos a usar na interface.
                 // MELHORIA: Adiciona múltiplas variações do placeholder para robustez.
@@ -414,6 +442,7 @@ client.on('message', async (message) => {
                 } finally {
                     await externalDb.close();
                 }
+              }
             } else { // Se não houver consulta ao DB, segue o caminho padrão.
                 nextStepId = currentStep.next_step_id;
             }
