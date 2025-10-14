@@ -2,7 +2,8 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: 'http://localhost:3001/api', // URL base do seu backend
+  // CORREÇÃO: Usa a variável de ambiente para a URL da API, com um fallback para desenvolvimento local.
+  baseURL: `${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api`,
 });
 
 // Adiciona um interceptor para incluir o token em todas as requisições

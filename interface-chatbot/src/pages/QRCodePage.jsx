@@ -5,7 +5,8 @@ import { Container, Card, Spinner, Alert } from 'react-bootstrap';
 import io from 'socket.io-client';
 
 // Conecta ao servidor de Socket.IO
-const socket = io('http://localhost:3001');
+// CORREÇÃO: Usa a variável de ambiente para a URL da API, com um fallback para desenvolvimento local.
+const socket = io(import.meta.env.VITE_API_URL || 'http://localhost:3001');
 
 function QRCodePage() {
   const [status, setStatus] = useState('Conectando ao servidor...');

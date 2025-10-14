@@ -37,7 +37,7 @@ DROP TABLE IF EXISTS `chats`;
 CREATE TABLE `chats` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `whatsapp_number` varchar(255) NOT NULL,
-  `status` enum('open','closed','autoatendimento') DEFAULT 'open',
+  `status` enum('open','closed','autoatendimento') DEFAULT 'autoatendimento',
   `name` varchar(255) DEFAULT NULL,
   `profile_pic_url` text DEFAULT NULL,
   `createdAt` datetime NOT NULL,
@@ -98,7 +98,6 @@ CREATE TABLE `flow_steps` (
   `db_host` varchar(255) DEFAULT NULL,
   `db_port` int(11) DEFAULT NULL,
   `db_user` varchar(255) DEFAULT NULL,
-  `db_pass` varchar(255) DEFAULT NULL,
   `db_name` varchar(255) DEFAULT NULL,
   `db_table` varchar(255) DEFAULT NULL,
   `extra_sql` text DEFAULT NULL,

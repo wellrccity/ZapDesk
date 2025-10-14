@@ -11,8 +11,8 @@ module.exports = (sequelize, DataTypes) => {
       host: { type: DataTypes.STRING, allowNull: false },
       port: { type: DataTypes.INTEGER, allowNull: false },
       user: { type: DataTypes.STRING, allowNull: false },
-      pass: { type: DataTypes.STRING, allowNull: false }, // Em um ambiente de produção, isso deve ser criptografado.
-      db_name: { type: DataTypes.STRING, allowNull: false }
+      pass: { type: DataTypes.STRING, allowNull: true }, // A senha pode ser opcional
+      // db_name: { type: DataTypes.STRING, allowNull: false } // CORREÇÃO: Removido. Será definido na etapa do fluxo.
     });
     return DatabaseCredential;
   };

@@ -17,8 +17,11 @@
     "react": "^19.1.1",
     "react-bootstrap": "^2.10.10",
     "react-bootstrap-icons": "^1.11.6",
+    "react-contenteditable": "^3.3.7",
     "react-dom": "^19.1.1",
     "react-router-dom": "^7.9.2",
+    "react-toastify": "^11.0.5",
+    "reactflow": "^11.11.4",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1"
   },

@@ -15,4 +15,7 @@ module.exports = function(app) {
     app.post("/api/flows/:flowId/steps", controller.addStepToFlow);
     app.put("/api/steps/:stepId", controller.updateStep);
     app.delete("/api/steps/:stepId", controller.deleteStep);
+
+    // Rota para buscar tabelas de um banco de dados específico de uma conexão
+    app.get("/api/database-credentials/:id/tables", controller.getTablesFromCredential); // A função no controller já espera `dbName` via query
 };

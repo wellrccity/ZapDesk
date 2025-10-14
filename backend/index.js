@@ -29,8 +29,21 @@ let userConversationStates = {};
 let agentChatStates = {}; // Mapeia o atendente (agentNumber) ao cliente (customerNumber)
 
 // --- 4. Configuração dos Middlewares do Express ---
+// CORREÇÃO: Lista de origens permitidas. Adicione o IP do seu frontend na LAN se for diferente do backend.
+const allowedOrigins = [
+  'http://localhost:5173', // Frontend local
+  `http://${process.env.LOCAL_IP || 'localhost'}:5173` // Permite acesso via IP da LAN
+];
+
 const corsOptions = {
-  origin: 'http://localhost:5173', // Endereço do seu frontend
+  origin: function (origin, callback) {
+    // Permite requisições sem 'origin' (ex: Postman) ou da lista de permitidos.
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
@@ -79,6 +92,15 @@ require('./routes/command.routes')(app);
 require('./routes/user.routes')(app);
 require('./routes/chat.routes')(app, client); // REMOÇÃO: Não precisa mais passar o middleware aqui.
 require('./routes/flow.routes')(app);
+const flowRoutes = require('./routes/flow.routes');
+flowRoutes(app);
+// Adiciona a nova rota para atualizar a posição
+const flowController = require('./controllers/flow.controller');
+app.put('/api/steps/:stepId/position', flowController.updateStepPosition);
+
+// Rota para colunas da tabela (depende de ambos os controllers, pode ficar aqui ou em flow.routes)
+app.get('/api/database-credentials/:id/databases/:dbName/tables/:tableName/columns', flowController.getTableColumns); // <-- ROTA CORRIGIDA
+
 require('./routes/contact.routes')(app);
 require('./routes/database_credential.routes')(app); // <-- ADICIONAR
 
@@ -210,7 +232,7 @@ async function processFlowStep(stepId, userNumber) {
                 delete userConversationStates[userNumber];
                 return;
             }
-            const externalDb = new Sequelize(creds.db_name, creds.user, creds.pass, {
+            const externalDb = new Sequelize(step.db_name, creds.user, creds.pass, { // CORREÇÃO: Usar o db_name da etapa (step)
                 host: creds.host,
                 port: creds.port,
                 dialect: creds.dialect || 'mysql'
@@ -364,13 +386,6 @@ client.on('message', async (message) => {
         io.emit('nova_mensagem', savedMessage.toJSON());
 
         const currentStep = await db.flow_steps.findByPk(userState.currentStepId, { include: [{ model: db.poll_options, as: 'poll_options' }] });
-        // --- INÍCIO DO BLOCO DE DEPURAÇÃO ---
-        console.log('\n--- INÍCIO DA DEPURAÇÃO DE ETAPA DE FLUXO ---');
-        console.log(`[DEBUG] Usuário: ${userNumber}`);
-        console.log(`[DEBUG] Mensagem recebida: "${message.body}"`);
-        console.log('[DEBUG] Estado atual da conversa (userState):', JSON.stringify(userState, null, 2));
-        console.log('[DEBUG] Etapa atual do fluxo (currentStep):', currentStep ? currentStep.toJSON() : 'NÃO ENCONTRADA');
-        // --- FIM DO BLOCO DE DEPURAÇÃO ---
         let nextStepId = null;
 
         if (!currentStep) {
@@ -393,7 +408,7 @@ client.on('message', async (message) => {
                     console.error(`Credenciais de banco de dados com ID ${currentStep.database_credential_id} não encontradas para a etapa QUESTION_TEXT.`);
                     nextStepId = currentStep.next_step_id_on_fail || null; // Segue para a etapa de falha
                 } else {
-                    const externalDb = new Sequelize(creds.db_name, creds.user, creds.pass, {
+                    const externalDb = new Sequelize(currentStep.db_name, creds.user, creds.pass, { // CORREÇÃO: Usar o db_name da etapa (currentStep)
                     host: creds.host, port: creds.port, dialect: creds.dialect || 'mysql', logging: false
                 });
 
@@ -425,7 +440,32 @@ client.on('message', async (message) => {
                             for (const formKey in mapping) {
                                 const dbColumn = mapping[formKey];
                                 if (firstResult[dbColumn] !== undefined) {
-                                    userState.formData[formKey] = firstResult[dbColumn];
+                                    let value = firstResult[dbColumn];
+
+                                    // Aplica as transformações em sequência, se existirem
+                                    if (typeof value === 'string' && currentStep.db_result_transforms) {
+                                        try {
+                                            const transforms = JSON.parse(currentStep.db_result_transforms);
+                                            if (Array.isArray(transforms)) {
+                                                for (const transform of transforms) {
+                                                    switch(transform) {
+                                                        case 'UPPERCASE': value = value.toUpperCase(); break;
+                                                        case 'LOWERCASE': value = value.toLowerCase(); break;
+                                                        case 'TITLECASE': value = value.toLowerCase().replace(/\b\w/g, char => char.toUpperCase()); break;
+                                                        case 'TRUNCATE_FIRST_SPACE': value = value.split(' ')[0]; break;
+                                                        case 'TRUNCATE_SECOND_SPACE':
+                                                            const parts = value.split(' ');
+                                                            value = parts.slice(0, 2).join(' ');
+                                                            break;
+                                                    }
+                                                }
+                                            }
+                                        } catch (e) {
+                                            console.error("Erro ao aplicar transformações de resultado de DB:", e);
+                                        }
+                                    }
+
+                                    userState.formData[formKey] = value;
                                 }
                             }
                             console.log("formData atualizado após mapeamento:", userState.formData);
@@ -462,18 +502,13 @@ client.on('message', async (message) => {
             }
         }
         
-        // --- INÍCIO DO BLOCO DE DEPURAÇÃO ---
-        console.log(`[DEBUG] ID da próxima etapa calculado: ${nextStepId} (Tipo: ${typeof nextStepId})`);
-        // --- FIM DO BLOCO DE DEPURAÇÃO ---
-
         if (nextStepId) {
-            console.log(`[DEBUG] DECISÃO: Avançando para a próxima etapa (ID: ${nextStepId}).`);
             // Chama a próxima etapa diretamente para garantir que os dados atualizados sejam usados.
             await processFlowStep(nextStepId, userNumber);
         } else {
             // Se não houver um próximo passo definido (nextStepId é nulo), o fluxo chegou ao fim.
-            console.log(`[DEBUG] DECISÃO: Finalizando o fluxo para ${userNumber} pois não há uma próxima etapa definida (nextStepId é nulo ou indefinido).`);
             // CORREÇÃO: Ao finalizar o fluxo, o chat deve ser marcado como 'closed'.
+            console.log(`Fluxo finalizado para ${userNumber} pois não há próxima etapa definida.`);
             // Ele só deve ir para 'open' se uma etapa específica (REQUEST_HUMAN_SUPPORT) for acionada.
             const chat = await db.chats.findOne({ where: { whatsapp_number: userNumber } });
             if (chat && chat.status === 'autoatendimento') {
@@ -483,7 +518,6 @@ client.on('message', async (message) => {
             }
             delete userConversationStates[userNumber];
         }
-        console.log('--- FIM DA DEPURAÇÃO DE ETAPA DE FLUXO ---\n');
     } else {
         // CORREÇÃO: A lógica de verificação de gatilho e atendimento humano foi movida para uma função separada.
         // NOVA LÓGICA: Verifica se a mensagem vem de um admin/atendente registrado.
@@ -494,13 +528,11 @@ client.on('message', async (message) => {
         // tenha sido cadastrado incorretamente.
         if (!internalUser && fromNumber.startsWith('55')) {
             const numberWithoutDDI = fromNumber.substring(2);
-            console.log(`Usuário não encontrado com ${fromNumber}. Tentando busca alternativa com ${numberWithoutDDI}...`);
             internalUser = await db.users.findOne({ where: { whatsapp_number: numberWithoutDDI } });
         }
 
         if (internalUser) {
-            console.log(`Mensagem recebida de um usuário interno: ${internalUser.name} (${internalUser.role})`);
-            // Garante que o número no banco seja corrigido para o formato completo para futuras buscas.
+            // Garante que o número no banco seja corrigido para o formato completo para futuras buscas, se necessário.
             if (internalUser.whatsapp_number !== fromNumber) await internalUser.update({ whatsapp_number: fromNumber });
             await handleInternalUserMessage(message, internalUser);
         } else {
@@ -641,7 +673,6 @@ async function handleInternalUserMessage(message, internalUser) {
     });
 
     if (flow && flow.initial_step_id) {
-        console.log(`Iniciando fluxo interno '${flow.name}' para ${internalUser.name}.`);
         userConversationStates[userNumber] = {
             flowId: flow.id,
             currentStepId: flow.initial_step_id,
@@ -655,7 +686,7 @@ async function handleInternalUserMessage(message, internalUser) {
         await processFlowStep(flow.initial_step_id, userNumber);
     } else {
         // Se nenhum fluxo for encontrado, pode enviar uma mensagem de ajuda
-        console.log(`Nenhum fluxo interno encontrado para o gatilho '${triggerKeyword}' e role '${internalUser.role}'.`);
+        // console.log(`Nenhum fluxo interno encontrado para o gatilho '${triggerKeyword}' e role '${internalUser.role}'.`);
         await client.sendMessage(userNumber, "Comando não reconhecido. Digite '!ajuda' para ver as opções disponíveis.");
     }
 }
@@ -673,7 +704,6 @@ async function handleCustomerMessage(message, userNumber) {
     // CORREÇÃO: Se o chat já existe E está atribuído a um atendente, trata como atendimento humano direto.
     // Isso impede que um fluxo seja acionado no meio de uma conversa humana ativa.
     if (existingChat && existingChat.assigned_to) {
-        console.log(`Chat com ${userNumber} já está com o atendente ${existingChat.assigned_to}. Encaminhando para atendimento humano.`);
         await processHumanChatMessage(message, existingChat);
         return; // Encerra a função aqui para não verificar gatilhos.
     }
@@ -681,24 +711,17 @@ async function handleCustomerMessage(message, userNumber) {
     // Se não há chat existente, a lógica de verificação de gatilho continua...
 
     // --- INÍCIO DA VERIFICAÇÃO DE GATILHO ---
-    console.log("\n--- INÍCIO DA VERIFICAÇÃO DE GATILHO ---");
-    console.log(`1. Mensagem recebida: "${message.body}"`);
     const triggerKeyword = message.body.trim().toLowerCase();
-    console.log(`2. Palavra-chave tratada (trim + minúsculo): "${triggerKeyword}"`);
     
     // 1. Tenta encontrar um fluxo de CLIENTE com a palavra-chave exata.
     let flow = await db.flows.findOne({ where: { trigger_keyword: triggerKeyword, target_audience: 'customer' } });
     
     // 2. Se não encontrar, procura por um fluxo "padrão" (catch-all) de CLIENTE.
     if (!flow) {
-        console.log("3. Nenhum fluxo com gatilho exato. Procurando por fluxo padrão...");
         flow = await db.flows.findOne({ where: { trigger_keyword: '*', target_audience: 'customer' } });
     }
     
-    console.log("3. Resultado da busca por fluxo no DB:", flow ? flow.toJSON() : "Nenhum fluxo encontrado (nem exato, nem padrão).");
-    
     if (flow && flow.initial_step_id) {
-        console.log("4. CONCLUSÃO: Gatilho correspondente encontrado! O bot deveria iniciar o fluxo.");
         // CORREÇÃO CRÍTICA: Salva a mensagem que disparou o fluxo no banco de dados.
         // Isso garante que a primeira mensagem do usuário apareça no histórico do chat.
         const [chatForLog] = await db.chats.findOrCreate({ where: { whatsapp_number: userNumber }, defaults: { status: 'autoatendimento' } });
@@ -726,9 +749,9 @@ async function handleCustomerMessage(message, userNumber) {
         await processFlowStep(flow.initial_step_id, userNumber);
     } else {
         if (flow) {
-            console.log("4. AVISO: Fluxo encontrado, mas não possui uma etapa inicial (initial_step_id é nulo).");
+            console.log(`AVISO: Fluxo '${flow.name}' encontrado, mas não possui uma etapa inicial (initial_step_id é nulo).`);
         } else {
-            console.log("4. CONCLUSÃO: Nenhum gatilho correspondente. Mensagem será tratada como atendimento humano.");
+            console.log(`Nenhum gatilho correspondente para a mensagem: "${message.body}". Mensagem será salva no chat.`);
         }
         // CORREÇÃO: Se nenhum fluxo foi disparado (nem por palavra-chave, nem o padrão),
         // a mensagem deve ser apenas salva no chat, que deve ser criado (ou encontrado)
@@ -742,7 +765,6 @@ async function handleCustomerMessage(message, userNumber) {
         // A função processHumanChatMessage já salva a mensagem e atualiza os dados do chat.
         await processHumanChatMessage(message, chat);
     }
-    console.log("--- FIM DA VERIFICAÇÃO DE GATILHO ---\n");
 }
 
 /**

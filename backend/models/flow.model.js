@@ -13,5 +13,12 @@ module.exports = (sequelize, DataTypes) => {
       defaultValue: 'customer'
     }
   });
+
+  // CORREÇÃO: Adiciona a associação que faltava com o modelo flow_steps.
+  // Isso é crucial para que o Sequelize possa incluir as etapas ('steps') na busca do fluxo.
+  Flow.associate = (models) => {
+    Flow.hasMany(models.flow_steps, { foreignKey: 'flow_id', as: 'steps' });
+  };
+
   return Flow;
 };

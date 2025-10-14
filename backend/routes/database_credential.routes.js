@@ -12,5 +12,9 @@ module.exports = function(app) {
   app.post("/api/flows/:flowId/database-credentials", [authJwt.verifyToken, authJwt.isAdmin], controller.create);
   app.get("/api/flows/:flowId/database-credentials", [authJwt.verifyToken, authJwt.isAdmin], controller.findAll);
   app.delete("/api/database-credentials/:id", [authJwt.verifyToken, authJwt.isAdmin], controller.delete);
-  app.get("/api/database-credentials/:id/tables/:tableName/columns", [authJwt.verifyToken, authJwt.isAdmin], controller.getTableColumns);
+
+  // Adiciona as rotas para buscar detalhes, atualizar e listar os bancos de uma credencial
+  app.get("/api/database-credentials/:id", [authJwt.verifyToken, authJwt.isAdmin], controller.findOne);
+  app.put("/api/database-credentials/:id", [authJwt.verifyToken, authJwt.isAdmin], controller.update);
+  app.get("/api/database-credentials/:id/databases", [authJwt.verifyToken, authJwt.isAdmin], controller.getDatabases);
 };

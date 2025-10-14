@@ -109,23 +109,19 @@ function ChatPage() {
 
   // Efeito para ouvir NOVAS MENSAGENS do chat que está ativo
   useEffect(() => {
-    const handleNewMessage = async (newMessage) => {
-      // CORREÇÃO: Busca a lista de chats para que o chat com a nova mensagem
-      // vá para o topo e para que chats reabertos apareçam.
-      await fetchChats();
-
+    const handleNewMessage = (newMessage) => {
       // Se a mensagem pertence ao chat ativo, adiciona à lista de mensagens visível
       if (activeChat && newMessage.chat_id === activeChat.id) {
         setMessages(prevMessages => [...prevMessages, newMessage]);
       } else {
-        // Se a mensagem é de um chat que não está ativo (incluindo fechados)
-        const chatDaMensagem = chats.find(c => c.id === newMessage.chat_id);
-        // Se o chat estava fechado e agora foi reaberto (e está na lista)
-        // ou se simplesmente não estava ativo, vamos selecioná-lo.
-        if (chatDaMensagem && chatDaMensagem.status === 'open' && activeChat?.id !== chatDaMensagem.id) {
-            // Seleciona o chat para o usuário ver a nova mensagem.
-            handleSelectChat(chatDaMensagem);
-        }
+        // OTIMIZAÇÃO: Se a mensagem é de um chat que não está ativo,
+        // busca a lista de chats para atualizar a ordem e mostrar a notificação.
+        // Isso evita requisições desnecessárias quando o usuário já está com o chat aberto.
+        fetchChats();
+
+        // Opcional: Se quiser que o chat abra automaticamente ao receber uma nova mensagem,
+        // você pode adicionar a lógica aqui para encontrar o chat na lista atualizada e chamar handleSelectChat.
+        // Por enquanto, apenas atualizamos a lista para que o usuário veja a notificação.
       }
     };
     socket.on('nova_mensagem', handleNewMessage);

@@ -25,15 +25,6 @@ db.form_submissions = require("./form_submissions.model.js")(sequelize, Sequeliz
 db.contacts = require("./contact.model.js")(sequelize, Sequelize);
 db.database_credentials = require("./database_credential.model.js")(sequelize, Sequelize); // <-- ADICIONAR
 
-// --- Definindo as Relações (Associações) ---
-// Um Fluxo (Flow) tem muitas Etapas (FlowSteps)
-db.flows.hasMany(db.flow_steps, { as: 'steps', foreignKey: 'flow_id' });
-db.flow_steps.belongsTo(db.flows, { foreignKey: 'flow_id' });
-
-// Uma Etapa (FlowStep) tem muitas Opções de Enquete (PollOptions)
-db.flow_steps.hasMany(db.poll_options, { as: 'poll_options', foreignKey: 'step_id' });
-db.poll_options.belongsTo(db.flow_steps, { foreignKey: 'step_id' });
-
 // Um Fluxo (Flow) tem muitas Credenciais de Banco de Dados (DatabaseCredential)
 db.flows.hasMany(db.database_credentials, { as: 'database_credentials', foreignKey: { name: 'flow_id', unique: 'compositeIndex' } });
 db.database_credentials.belongsTo(db.flows, { foreignKey: { name: 'flow_id', unique: 'compositeIndex' } });
