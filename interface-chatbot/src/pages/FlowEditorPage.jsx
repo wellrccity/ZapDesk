@@ -270,7 +270,7 @@ function FlowEditorPage() {
       if (step.next_step_id_on_fail) {
         edges.push({ id: `e-${step.id}-fail-${step.next_step_id_on_fail}`, source: step.id.toString(), target: step.next_step_id_on_fail.toString(), sourceHandle: 'next_step_id_on_fail', style: { stroke: '#d9534f' }, markerEnd: { type: 'arrowclosed', color: '#d9534f' } });
       }
-      if (step.poll_options) {
+      if ((step.step_type === 'QUESTION_POLL' || step.step_type === 'QUESTION_AI_CHOICE') && step.poll_options) {
         step.poll_options.forEach(opt => {
           if (opt.next_step_id_on_select) {
             edges.push({ id: `e-${step.id}-poll-${opt.id}-${opt.next_step_id_on_select}`, source: step.id.toString(), target: opt.next_step_id_on_select.toString(), sourceHandle: `poll_option_${opt.id}`, style: { stroke: '#0275d8' }, markerEnd: { type: 'arrowclosed', color: '#0275d8' } });

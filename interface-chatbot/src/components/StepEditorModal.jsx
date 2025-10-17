@@ -180,8 +180,8 @@ function StepEditorModal({ show, onHide, onSave, currentStep, allSteps, dbCreden
 
     // CORREÇÃO: Se o tipo da etapa for mudado para Enquete,
     // garante que o array de opções seja inicializado.
-    if (name === 'step_type' && value === 'QUESTION_POLL') {
-      setStepData(prev => ({ ...prev, poll_options: prev.poll_options || [] }));
+    if (name === 'step_type' && (value === 'QUESTION_POLL' || value === 'QUESTION_AI_CHOICE')) {
+      setStepData(prev => ({ ...prev, poll_options: prev.poll_options || [] , step_type: value }));
     }
   };
 
@@ -327,6 +327,7 @@ function StepEditorModal({ show, onHide, onSave, currentStep, allSteps, dbCreden
               <option value="MESSAGE">Mensagem Simples</option>
               <option value="QUESTION_TEXT">Pergunta (Texto)</option>
               <option value="QUESTION_POLL">Pergunta (Enquete/Menu)</option>
+              <option value="QUESTION_AI_CHOICE">Pergunta (Decisão por IA)</option>
               <option value="FORM_SUBMIT">Finalizar e Enviar Formulário</option>
               <option value="END_FLOW">Finalizar Fluxo</option>
               <option value="LIST_CHATS">Listar Atendimentos</option>
@@ -358,7 +359,7 @@ function StepEditorModal({ show, onHide, onSave, currentStep, allSteps, dbCreden
               html={stepData.message_body_html || ''}
               onChange={handleMessageBodyChange}
               onClick={handleTagClick}
-              onPaste={handlePaste} // Adiciona o handler para o evento de colar.
+              onPaste={handlePaste}
               className="form-control content-editable-wrapper"
             />
           </Form.Group>
@@ -411,7 +412,7 @@ function StepEditorModal({ show, onHide, onSave, currentStep, allSteps, dbCreden
             </Form.Group>
           )}
           
-          {(stepData.step_type === 'QUESTION_TEXT' || stepData.step_type === 'QUESTION_POLL') && (
+          {(stepData.step_type === 'QUESTION_TEXT' || stepData.step_type === 'QUESTION_POLL' || stepData.step_type === 'QUESTION_AI_CHOICE') && (
             <Form.Group className="mb-3 p-3 bg-light border rounded">
               <Form.Label className="fw-bold">Configuração da Pergunta</Form.Label>
               <Form.Control 
@@ -618,9 +619,15 @@ function StepEditorModal({ show, onHide, onSave, currentStep, allSteps, dbCreden
           )}
 
           {/* --- NOVA SEÇÃO PARA OPÇÕES DE ENQUETE --- */}
-          {stepData.step_type === 'QUESTION_POLL' && stepData.poll_options && (
+          {(stepData.step_type === 'QUESTION_POLL' || stepData.step_type === 'QUESTION_AI_CHOICE') && stepData.poll_options && (
             <Card className="p-3">
-              <Card.Title>Opções da Enquete (Menu)</Card.Title>
+              <Card.Title>
+                {stepData.step_type === 'QUESTION_AI_CHOICE' ? 'Opções para Decisão da IA' : 'Opções da Enquete (Menu)'}
+              </Card.Title>
+              {stepData.step_type === 'QUESTION_AI_CHOICE' && (
+                <Form.Text className="d-block mb-3 p-2 bg-info bg-opacity-10 border border-info rounded">Estas opções <b>não</b> serão exibidas ao usuário. A IA usará o "Gatilho" e o "Texto da Opção" para decidir o melhor caminho com base na resposta do cliente.</Form.Text>
+              )}
+
               {stepData.poll_options.map((opt, index) => (
                 <Row key={opt.id || opt.temp_key || index} className="mb-2 align-items-center">
                   <Col md={2}>

@@ -11,20 +11,20 @@ const getStepTypeStyle = (type) => {
         'QUESTION_POLL': { variant: 'primary', label: 'Pergunta (Enquete)' },
         'FORM_SUBMIT': { variant: 'success', label: 'Enviar Formulário' },
         'END_FLOW': { variant: 'dark', label: 'Finalizar Fluxo' },
+        'QUESTION_AI_CHOICE': { variant: 'info', label: 'Decisão por IA' },
         'REQUEST_HUMAN_SUPPORT': { variant: 'warning', label: 'Atendimento Humano' },
         'LIST_CHATS': { variant: 'secondary', label: 'Listar Atendimentos' },
         'ASSIGN_CHAT': { variant: 'danger', label: '[AÇÃO] Assumir' },
         'ENTER_CONVERSATION_MODE': { variant: 'danger', label: '[AÇÃO] Modo Conversa' },
         'CLOSE_CHAT': { variant: 'danger', label: '[AÇÃO] Encerrar' },
     };
-    return styles[type] || { variant: 'light', label: type };
+    return styles[type] || { variant: 'light', label: type }; // Fallback
 };
 
 function FlowStepNode({ data }) {
     const { step, stepIndex, onEdit, onDelete } = data;
     const style = getStepTypeStyle(step.step_type);
 
-    const isSource = step.step_type === 'MESSAGE' || step.step_type === 'QUESTION_TEXT' || step.step_type === 'QUESTION_POLL';
     const isTarget = true; // Todas as etapas podem ser um alvo
 
     return (
@@ -89,8 +89,8 @@ function FlowStepNode({ data }) {
                  </>
             )}
 
-            {/* Handles de Saída para Opções de Enquete */}
-            {step.step_type === 'QUESTION_POLL' && step.poll_options && step.poll_options.map((opt, index) => {
+            {/* Handles de Saída para Opções de Enquete e Decisão por IA */}
+            {(step.step_type === 'QUESTION_POLL' || step.step_type === 'QUESTION_AI_CHOICE') && step.poll_options && step.poll_options.map((opt, index) => {
                 const label = opt.trigger_keyword || opt.option_text || `Opção ${index + 1}`;
                 const truncatedLabel = label.length > 15 ? label.substring(0, 15) + '...' : label;
 

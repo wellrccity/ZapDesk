@@ -128,7 +128,7 @@ exports.addStepToFlow = async (req, res) => { // CORREÇÃO: Adicionado db_colum
             position_y
         }, { transaction });
 
-        if (step_type === 'QUESTION_POLL' && poll_options) {
+        if ((step_type === 'QUESTION_POLL' || step_type === 'QUESTION_AI_CHOICE') && poll_options) {
             for (const opt of poll_options) {
                 await PollOption.create({
                     step_id: newStep.id,
@@ -175,7 +175,7 @@ exports.updateStep = async (req, res) => { // CORREÇÃO: Adicionado db_column_m
         );
 
         // 2. Se for uma enquete, atualiza as opções
-        if (step_type === 'QUESTION_POLL' && poll_options) {
+        if ((step_type === 'QUESTION_POLL' || step_type === 'QUESTION_AI_CHOICE') && poll_options) {
             // Apaga as opções antigas
             await PollOption.destroy({ where: { step_id: stepId }, transaction });
             // Cria as novas opções com os novos destinos

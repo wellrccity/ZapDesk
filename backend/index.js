@@ -14,6 +14,7 @@ const db = require("./models");
 const bcrypt = require('bcryptjs');
 const axios = require('axios');
 const { Sequelize } = require('sequelize');
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 
 // --- 2. Setup do Express e Servidor ---
@@ -58,6 +59,8 @@ const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: { headless: true, args: ['--no-sandbox'] }
 });
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
 
 // --- 6. Middleware para Injetar Instâncias nas Rotas ---
 app.use((req, res, next) => {
@@ -179,12 +182,12 @@ async function processFlowStep(stepId, userNumber) {
  
         // 2. Adiciona cada opção formatada à mensagem
         step.poll_options.forEach(opt => {
-            textMessage += `\n▶️ ${opt.option_text}`;
+            textMessage += `\n${opt.option_text}\n`;
         });
  
         // 3. Adiciona uma instrução final
         if (step.poll_options.length > 0) {
-            textMessage += `\n\nResponda com o texto exato de uma das opções acima.`;
+            textMessage += `\n\nResponda com o número correspondente de uma das opções acima.`;
         };
  
         // 4. Envia a mensagem de texto completa
@@ -202,6 +205,29 @@ async function processFlowStep(stepId, userNumber) {
         });
         io.emit('nova_mensagem', savedMessage.toJSON());
         console.log("Mensagem de texto da enquete enviada com sucesso para", userNumber);
+    }
+    // NOVA ETAPA: PERGUNTA COM DECISÃO POR IA
+    else if (step.step_type === 'QUESTION_AI_CHOICE') {
+        // Para a IA, apenas enviamos a pergunta. As opções são internas.
+        const sentMessage = await client.sendMessage(userNumber, finalMessage);
+        // Garante que o chat exista e o cria como 'autoatendimento' se for novo.
+        const [chat] = await db.chats.findOrCreate({ 
+            where: { whatsapp_number: userNumber }, 
+            defaults: { status: 'autoatendimento' } 
+        });
+        if (chat.status === 'closed') {
+            chat.status = 'autoatendimento';
+            await chat.save();
+            io.emit('chat_updated', chat.toJSON());
+        }
+        const savedMessage = await db.messages.create({
+            chat_id: chat.id, 
+            body: finalMessage, 
+            timestamp: sentMessage.timestamp,
+            from_me: true, 
+            media_type: 'chat'
+        });
+        io.emit('nova_mensagem', savedMessage.toJSON());
     }
     else if (step.step_type === 'FORM_SUBMIT') {
         const userState = userConversationStates[userNumber];
@@ -366,7 +392,14 @@ client.on('message', async (message) => {
     const userNumber = message.from; // Agora que filtramos as mensagens 'fromMe', 'from' será sempre o usuário.
     const userState = userConversationStates[userNumber];
 
+    // CORREÇÃO: Adiciona um bloqueio para evitar processamento de múltiplas mensagens simultâneas.
+    if (userState && userState.isProcessing) {
+        console.log(`Ignorando mensagem de ${userNumber} pois uma anterior já está em processamento.`);
+        return;
+    }
+
     if (userState) {
+        userState.isProcessing = true; // Bloqueia o estado para processamento.
         // CORREÇÃO: Salva a mensagem do usuário no banco de dados, mesmo durante um fluxo.
         // Garante que o chat exista e o cria como 'autoatendimento' se for novo.
         const [chat] = await db.chats.findOrCreate({ where: { whatsapp_number: userNumber }, defaults: { status: 'autoatendimento' } });
@@ -390,6 +423,7 @@ client.on('message', async (message) => {
 
         if (!currentStep) {
             delete userConversationStates[userNumber];
+            // Não precisa mais do 'isProcessing = false' aqui, pois o estado é deletado.
             return;
         }
 
@@ -437,10 +471,11 @@ client.on('message', async (message) => {
                         console.log("Dados encontrados no DB externo:", firstResult);
                         if (currentStep.db_query_result_mapping) {
                             const mapping = JSON.parse(currentStep.db_query_result_mapping);
-                            for (const formKey in mapping) {
-                                const dbColumn = mapping[formKey];
-                                if (firstResult[dbColumn] !== undefined) {
-                                    let value = firstResult[dbColumn];
+                            // CORREÇÃO: Itera sobre as chaves do mapeamento (nomes das colunas do DB).
+                            for (const dbColumnName in mapping) {
+                                const formVariableKey = mapping[dbColumnName]; // Pega o nome da variável do formulário.
+                                if (firstResult[dbColumnName] !== undefined) { // Verifica se a coluna existe no resultado.
+                                    let value = firstResult[dbColumnName]; // Pega o valor do resultado do DB.
 
                                     // Aplica as transformações em sequência, se existirem
                                     if (typeof value === 'string' && currentStep.db_result_transforms) {
@@ -465,12 +500,17 @@ client.on('message', async (message) => {
                                         }
                                     }
 
-                                    userState.formData[formKey] = value;
+                                    // Atribui o valor (transformado) à variável correta do formulário.
+                                    userState.formData[formVariableKey] = value;
                                 }
                             }
-                            console.log("formData atualizado após mapeamento:", userState.formData);
                         }
-                    } else {
+                    if (firstResult.nome !== undefined && userState.formData.nome_funcionario === undefined) {
+                        userState.formData.nome_funcionario = firstResult.nome;
+                        console.log("Adicionado 'nome_funcionario' explicitamente ao formData:", userState.formData.nome_funcionario);
+                    }
+                    console.log("formData atualizado após mapeamento:", userState.formData);
+                } else {
                         console.log("Nenhum dado encontrado para a consulta. Verificando 'next_step_id_on_fail'.");
                         nextStepId = currentStep.next_step_id_on_fail || null; // Usa o passo de falha, se existir
                     }
@@ -501,9 +541,52 @@ client.on('message', async (message) => {
                 return;
             }
         }
+        // NOVA LÓGICA: ETAPA DE DECISÃO POR IA
+        else if (currentStep.step_type === 'QUESTION_AI_CHOICE') {
+            const userResponse = message.body.trim();
+            const options = currentStep.poll_options;
+
+            if (!options || options.length === 0) {
+                console.error("Erro: Etapa QUESTION_AI_CHOICE sem opções definidas.");
+                delete userConversationStates[userNumber];
+                return;
+            }
+
+            // Mapeia as opções para um formato que a IA possa entender.
+            // Usamos o 'trigger_keyword' como o identificador único para cada opção.
+            const choicesText = options.map(opt => `- "${opt.trigger_keyword}": ${opt.option_text}`).join('\n');
+            const prompt = `Analise a seguinte mensagem de um usuário: "${userResponse}". Com base nessa mensagem, escolha a opção mais apropriada da lista abaixo. Responda APENAS com o identificador da opção escolhida (o texto entre aspas).
+
+Lista de Opções:
+${choicesText}
+
+Sua Resposta (apenas o identificador):`;
+
+            try {
+                const result = await model.generateContent(prompt);
+                const response = await result.response;
+                console.log("DEBUG: Resposta bruta da IA:", response.text()); // <-- DEBUG ADICIONADO
+                const aiChoiceText = response.text().trim().replace(/"/g, ''); // Limpa a resposta da IA
+
+                console.log(`Resposta do usuário: "${userResponse}" | Escolha da IA: "${aiChoiceText}"`);
+
+                const selectedOption = options.find(opt => opt.trigger_keyword.toLowerCase() === aiChoiceText.toLowerCase());
+
+                if (selectedOption) {
+                    nextStepId = selectedOption.next_step_id_on_select;
+                } else {
+                    console.log("IA retornou uma opção inválida ou não reconhecida. Usando fallback.");
+                    nextStepId = currentStep.next_step_id_on_fail || null; // Usa o passo de falha, se existir
+                }
+            } catch (error) {
+                console.error("Erro ao chamar a API do Gemini:", error);
+                nextStepId = currentStep.next_step_id_on_fail || null; // Usa o passo de falha em caso de erro na API
+            }
+        }
         
         if (nextStepId) {
             // Chama a próxima etapa diretamente para garantir que os dados atualizados sejam usados.
+            userState.isProcessing = false; // Libera o bloqueio antes de ir para a próxima etapa.
             await processFlowStep(nextStepId, userNumber);
         } else {
             // Se não houver um próximo passo definido (nextStepId é nulo), o fluxo chegou ao fim.
@@ -517,6 +600,7 @@ client.on('message', async (message) => {
                 io.emit('chat_updated', chat.toJSON());
             }
             delete userConversationStates[userNumber];
+            // O estado é deletado, então o bloqueio é removido implicitamente.
         }
     } else {
         // CORREÇÃO: A lógica de verificação de gatilho e atendimento humano foi movida para uma função separada.
@@ -744,7 +828,8 @@ async function handleCustomerMessage(message, userNumber) {
         userConversationStates[userNumber] = {
             flowId: flow.id,
             currentStepId: flow.initial_step_id,
-            formData: {}
+            formData: {},
+            isProcessing: false // Inicializa o estado de bloqueio.
         };
         await processFlowStep(flow.initial_step_id, userNumber);
     } else {
